@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Neighbor Match Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; max-width: 960px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f7f7f7; }
+    .actions { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    form { display: inline; }
+  </style>
+</head>
+<body>
+  <h1>Neighbor Match Admin</h1>
+
+  <div class="actions">
+    <form method="post" action="/admin/generate-matches">
+      <input type="hidden" name="token" value="{{ request.args.get('token', '') }}">
+      <button type="submit">Generate Matches</button>
+    </form>
+    <form method="post" action="/admin/send-matches">
+      <input type="hidden" name="token" value="{{ request.args.get('token', '') }}">
+      <button type="submit">Send Match Emails</button>
+    </form>
+    <a href="/admin/export/users?token={{ request.args.get('token', '') }}">Export Users CSV</a>
+    <a href="/admin/export/matches?token={{ request.args.get('token', '') }}">Export Matches CSV</a>
+  </div>
+
+  <h2>Tenants</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Unit</th>
+        <th>Group</th>
+        <th>Pause</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+        <tr>
+          <td>{{ user.full_name }}</td>
+          <td>{{ user.email }}</td>
+          <td>{{ user.unit }}</td>
+          <td>{{ user.meet_group }}</td>
+          <td>{{ user.pause_in_weeks }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Matches</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Season</th>
+        <th>Tenant 1</th>
+        <th>Tenant 2</th>
+        <th>Responses</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for meet in meets %}
+        <tr>
+          <td>{{ meet.season }}</td>
+          <td>
+            {% if user_map.get(meet.uid1) %}
+              {{ user_map.get(meet.uid1).full_name }} ({{ user_map.get(meet.uid1).email }})
+            {% else %}
+              {{ meet.uid1 }}
+            {% endif %}
+          </td>
+          <td>
+            {% if user_map.get(meet.uid2) %}
+              {{ user_map.get(meet.uid2).full_name }} ({{ user_map.get(meet.uid2).email }})
+            {% else %}
+              {{ meet.uid2 }}
+            {% endif %}
+          </td>
+          <td>
+            {% if invite_status.get(meet.id) %}
+              <ul>
+                {% for invite in invite_status.get(meet.id) %}
+                  <li>
+                    {% if user_map.get(invite.uid) %}
+                      {{ user_map.get(invite.uid).full_name }} - {{ invite.status }}
+                    {% else %}
+                      {{ invite.uid }} - {{ invite.status }}
+                    {% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              Pending
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

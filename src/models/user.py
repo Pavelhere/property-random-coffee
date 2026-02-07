@@ -12,6 +12,10 @@ class User(Base):
 
     id = Column(String(48), primary_key=True, nullable=False, unique=True)
     username = Column(String(92), nullable=False, unique=False)
+    email = Column(String(120), nullable=True, unique=True)
+    full_name = Column(String(120), nullable=True, unique=False)
+    unit = Column(String(32), nullable=True, unique=False)
+    bio = Column(String(300), nullable=True, unique=False)
     pause_in_weeks = Column(String(10), nullable=False, unique=False, default="0")
     loc = Column(String(24), nullable=False, unique=False, default="none")
     meet_group = Column(String(24), nullable=False, unique=False, default="remote")
@@ -22,6 +26,10 @@ class User(Base):
     def __repr__(self):
         return f'<User(id="{self.id}", ' \
                f'username="{self.username}", ' \
+               f'email="{self.email}", ' \
+               f'full_name="{self.full_name}", ' \
+               f'unit="{self.unit}", ' \
+               f'bio="{self.bio}", ' \
                f'pause_in_weeks="{self.pause_in_weeks}", ' \
                f'loc="{self.loc}", ' \
                f'meet_group="{self.meet_group}")>'

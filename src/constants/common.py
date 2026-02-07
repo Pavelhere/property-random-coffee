@@ -10,6 +10,7 @@ class NotificationTypes:
     reminder: str = 'reminder'
     feedback: str = 'feedback'
     next_week: str = 'next_week'
+    match_proposal: str = 'match_proposal'
 
 
 @dataclass
@@ -19,6 +20,7 @@ class DBTables:
     meta: str = 'meta'
     rating: str = 'rating'
     notification: str = 'notification'
+    match_invite: str = 'match_invite'
 
 
 NTF_TYPES = NotificationTypes()

@@ -25,3 +25,7 @@ class RatingNotFoundError(NotFoundError):
 
 class UserNotFoundError(NotFoundError):
     entity_name: str = 'User'
+
+
+class MatchInviteNotFoundError(NotFoundError):
+    entity_name: str = 'MatchInvite'

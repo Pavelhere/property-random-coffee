@@ -1,23 +1,26 @@
 # -*- coding: utf-8 -*-
 
 import time
+import secrets
 
 from loguru import logger
-from utils import season, repo, msg, groups
+from utils import season, repo, msg, groups, notifications
 from utils import config as cfg_utils
 from utils import time as utils_time
 from constants import messages, elements, common
 from db import utils as db_utils
-from db.exceptions import NotificationNotFoundError
+from db.exceptions import NotificationNotFoundError, MatchInviteNotFoundError
 from models.notification import Notification
+from models.match_invite import MatchInvite
 
 
 def care(client, config):
-    user_repo, ntf_repo, rating_repo, meet_repo, metadata_repo = db_utils.get_repos(config)
+    user_repo, ntf_repo, rating_repo, meet_repo, metadata_repo, invite_repo = db_utils.get_repos(config)
 
     while True:
         config_meet_groups = config["generated"]["groups"]
         weekday, internal_bot_hour = cfg_utils.get_week_info(config)
+        channel = config["communications"]["defaultChannel"]
 
         season_id = season.get()
         ntf_dry_run = config["notifications"]["dryRun"]
@@ -42,6 +45,78 @@ def care(client, config):
         users_with_pair = set()
         meets = meet_repo.list(spec={"season": season_id})
         pairs = []
+
+        if channel == "email":
+            for meet in meets:
+                try:
+                    user1 = user_repo.get_by_id(meet.uid1)
+                    user2 = user_repo.get_by_id(meet.uid2)
+                except Exception as ex:
+                    logger.error(f"Failed to load users for meet {meet.id}: {ex}")
+                    continue
+
+                users_with_pair.add(user1.id)
+                users_with_pair.add(user2.id)
+
+                try:
+                    invite1 = invite_repo.get_by_meet_user(meet.id, user1.id)
+                except MatchInviteNotFoundError:
+                    invite1 = invite_repo.add(MatchInvite(
+                        meet_id=meet.id,
+                        uid=user1.id,
+                        token=secrets.token_urlsafe(16)
+                    ))
+
+                try:
+                    invite2 = invite_repo.get_by_meet_user(meet.id, user2.id)
+                except MatchInviteNotFoundError:
+                    invite2 = invite_repo.add(MatchInvite(
+                        meet_id=meet.id,
+                        uid=user2.id,
+                        token=secrets.token_urlsafe(16)
+                    ))
+
+                subject, body, html_body = notifications.build_match_email(
+                    config, user1, user2, invite1.token
+                )
+                notifications.send_email_notification(
+                    config,
+                    ntf_repo,
+                    user1,
+                    f"{common.NTF_TYPES.match_proposal}_{meet.id}",
+                    subject,
+                    body,
+                    html_body=html_body
+                )
+
+                subject, body, html_body = notifications.build_match_email(
+                    config, user2, user1, invite2.token
+                )
+                notifications.send_email_notification(
+                    config,
+                    ntf_repo,
+                    user2,
+                    f"{common.NTF_TYPES.match_proposal}_{meet.id}",
+                    subject,
+                    body,
+                    html_body=html_body
+                )
+
+            if 1 <= weekday <= 5:
+                for usr in users:
+                    if usr.id not in users_with_pair:
+                        subject, body = notifications.build_no_match_email(usr)
+                        notifications.send_email_notification(
+                            config,
+                            ntf_repo,
+                            usr,
+                            common.NTF_TYPES.looking,
+                            subject,
+                            body
+                        )
+
+            time.sleep(config["daemons"]["week"]["poolPeriod"])
+            continue
 
         # NOTE: Create pairs (it's the same as meets, but more convenient form)
         for meet in meets:

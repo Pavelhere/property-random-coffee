@@ -740,7 +740,7 @@ if __name__ == "__main__":
 
     logger.info("Bot launching ...")
 
-    user_repo, ntf_repo, rating_repo, meet_repo, metadata_repo = db_utils.get_repos(config)
+    user_repo, ntf_repo, rating_repo, meet_repo, metadata_repo, invite_repo = db_utils.get_repos(config)
 
     week = Process(
         target=week.care,

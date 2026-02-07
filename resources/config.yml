@@ -54,6 +54,22 @@ daemons:
 notifications:
   dryRun: true
 
+communications:
+  defaultChannel: "email"
+  fromName: "Community Match"
+  fromEmail: ""
+
+email:
+  smtpHost: ""
+  smtpPort: 587
+  smtpUser: ""
+  smtpPassword: ""
+  useTLS: true
+
+web:
+  baseUrl: "http://localhost:5000"
+  adminToken: ""
+
 devMode:
   enabled: true
   weekday: 5

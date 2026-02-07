@@ -33,6 +33,10 @@ class UserRepository:
         with self.session_factory() as session:
             session.query(User).filter_by(id=user.id).update(dict(
                 username=user.username,
+                email=user.email,
+                full_name=user.full_name,
+                unit=user.unit,
+                bio=user.bio,
                 pause_in_weeks=user.pause_in_weeks,
                 loc=user.loc,
                 meet_group=user.meet_group
@@ -45,6 +49,13 @@ class UserRepository:
             user = session.query(User).filter(User.id == id).first()
             if not user:
                 raise UserNotFoundError(id)
+            return user
+
+    def get_by_email(self, email: str) -> User:
+        with self.session_factory() as session:
+            user = session.query(User).filter(User.email == email).first()
+            if not user:
+                raise UserNotFoundError(email)
             return user
 
     def list(self, spec: Mapping = None) -> Iterator[User]:
