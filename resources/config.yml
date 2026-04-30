@@ -1,0 +1,41 @@
+community:
+  displayName: "Property Random Coffee"
+  groups:
+    skyline:
+      displayName: "Skyline Tower"
+      enabled: true
+    riverside:
+      displayName: "Riverside Lofts"
+      enabled: true
+    garden:
+      displayName: "Garden Hills"
+      enabled: false
+app:
+  baseUrl: "http://localhost:5000"
+  adminToken: "change-this-secret"
+  responseSecret: "change-this-secret-too"
+database:
+  host: 127.0.0.1
+  port: 3308
+  db: coffee
+  username: root
+email:
+  smtp:
+    host: "smtp.example.com"
+    port: 587
+    username: ""
+    password: ""
+    use_tls: true
+  fromAddress: "community@localhost"
+  replyTo: "community@localhost"
+daemons:
+  week:
+    poolPeriod: 3600
+notifications:
+  dryRun: true
+devMode:
+  enabled: true
+  weekday: 5
+  hour: 20
+log:
+  rotation: "1 week"
