@@ -24,7 +24,7 @@ user_repo, _, _, meet_repo, metadata_repo, match_response_repo = db_utils.get_re
 
 email_client = EmailClient(config, dry_run=config["notifications"].get("dryRun", True))
 matching_service = MatchingService(config, user_repo, meet_repo, metadata_repo, email_client)
-response_service = ResponseService(config, meet_repo, match_response_repo)
+response_service = ResponseService(config, meet_repo, match_response_repo, user_repo, email_client)
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config["ADMIN_TOKEN"] = config["app"].get("adminToken")
@@ -1198,7 +1198,74 @@ def respond():
         logger.error("Failed to store response: %s", exc)
         return Response("Unable to record response", status=400)
 
-    return Response(f"Thank you. Match status is now {status}", status=200)
+    # Get peer name for display
+    try:
+        meet = meet_repo.get_by_id(meet_id_int)
+        peer = response_service.get_peer(meet, uid)
+        peer_name = (peer.full_name or peer.username).split()[0] if peer else "your neighbor"
+        peer_bio = peer.bio if peer else None
+        peer_avatar = peer_name[0].upper() if peer_name else "?"
+    except Exception:
+        peer_name = "your neighbor"
+        peer_bio = None
+        peer_avatar = "?"
+
+    community_name = config["community"].get("displayName", "Community Coffee")
+
+    if status == "connected":
+        headline = "You're both in! 🎉"
+        message = f"You and {peer_name} both said yes. Check your inbox — we just sent you a mutual introduction with each other's contact details."
+        icon = "✓"
+        icon_bg = "#143c32"
+        icon_color = "#f5ede3"
+        extra = f"""
+        <div style="background:#faf7f2;border:1px solid rgba(26,31,24,0.08);border-radius:16px;padding:18px 20px;margin:24px 0;text-align:left">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:44px;height:44px;border-radius:50%;background:#143c32;color:#f5ede3;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0">{peer_avatar}</div>
+            <div>
+              <div style="font-weight:700;font-size:16px;color:#1a1f18">{peer_name}</div>
+              {'<div style="font-size:13px;color:#5a6356;font-style:italic;margin-top:2px">"' + peer_bio + '"</div>' if peer_bio else ''}
+            </div>
+          </div>
+        </div>
+        <p style="font-size:14px;color:#5a6356;text-align:center">Hit <strong>Reply All</strong> on the intro email to say hello.</p>"""
+    elif action == "accept":
+        headline = "You said yes!"
+        message = f"We'll let you know as soon as {peer_name} responds."
+        icon = "✓"
+        icon_bg = "#143c32"
+        icon_color = "#f5ede3"
+        extra = ""
+    else:
+        headline = "No problem."
+        message = "We'll pair you with someone new next Monday."
+        icon = "—"
+        icon_bg = "#edf5f0"
+        icon_color = "#143c32"
+        extra = ""
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{headline} — Community Coffee</title>
+</head>
+<body style="margin:0;padding:0;background:#f5ede3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem">
+  <div style="width:100%;max-width:400px;background:#fff;border-radius:24px;padding:3rem 2rem;text-align:center;box-shadow:0 8px 40px rgba(26,31,24,0.1)">
+    <div style="width:5rem;height:5rem;border-radius:50%;background:{icon_bg};color:{icon_color};font-size:1.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem">{icon}</div>
+    <p style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#143c32;margin:0 0 8px">{community_name}</p>
+    <h1 style="font-size:22px;font-weight:700;color:#1a1f18;margin:0 0 12px;letter-spacing:-0.3px">{headline}</h1>
+    <p style="font-size:15px;color:#5a6356;line-height:1.6;margin:0">{message}</p>
+    {extra}
+    <a href="/" style="display:inline-block;margin-top:2rem;background:#143c32;color:#f5ede3;text-decoration:none;border-radius:100px;padding:0.75rem 1.75rem;font-size:14px;font-weight:600">Back to Community Coffee</a>
+  </div>
+</div>
+</body>
+</html>"""
+
+    return Response(html, status=200, mimetype="text/html")
 
 
 def _run_match_daemon():
