@@ -26,7 +26,7 @@ email_client = EmailClient(config, dry_run=config["notifications"].get("dryRun",
 matching_service = MatchingService(config, user_repo, meet_repo, metadata_repo, email_client)
 response_service = ResponseService(config, meet_repo, match_response_repo)
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config["ADMIN_TOKEN"] = config["app"].get("adminToken")
 
 ACTIVITY_LABELS = {
@@ -151,7 +151,8 @@ nav a:hover{opacity:1}
 /* HERO */
 .hero{position:relative;min-height:47rem;overflow:hidden}
 @media(min-width:1024px){.hero{min-height:52rem}}
-.hero-bg{position:absolute;inset:0;background:radial-gradient(circle at 72% 20%,rgba(255,255,255,0.92),transparent 26%),radial-gradient(circle at 20% 78%,rgba(218,236,227,0.95),transparent 30%),linear-gradient(115deg,#f8f2e9 0%,#e7d6bf 42%,#b7c7b9 100%)}
+.hero-bg{position:absolute;inset:0;background-image:url('/static/hero-bg.jpg');background-size:cover;background-position:center 30%;background-repeat:no-repeat}
+.hero-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(to right,rgba(245,237,227,0.52) 0%,rgba(245,237,227,0.22) 50%,rgba(245,237,227,0.0) 100%)}
 .hero-panel{position:absolute;left:52%;top:13%;width:38rem;height:32rem;transform:rotate(-6deg);border-radius:4rem;border:1px solid rgba(255,255,255,0.7);background:rgba(255,255,255,0.25);backdrop-filter:blur(12px);box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 40px 100px rgba(0,0,0,.16);display:none}
 @media(min-width:1024px){.hero-panel{display:block}}
 .hero-overlay1{position:absolute;inset:0;background:linear-gradient(to right,rgba(247,241,232,0.78),rgba(247,241,232,0.42),rgba(247,241,232,0.1))}
