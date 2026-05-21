@@ -1,15 +1,15 @@
 community:
-  displayName: "Property Random Coffee"
+  displayName: "Preston Ridge"
   groups:
-    skyline:
-      displayName: "Skyline Tower"
+    coffee:
+      displayName: "Coffee chat"
       enabled: true
-    riverside:
-      displayName: "Riverside Lofts"
+    walking:
+      displayName: "Neighborhood walk"
       enabled: true
-    garden:
-      displayName: "Garden Hills"
-      enabled: false
+    playdate:
+      displayName: "Playdate with kids"
+      enabled: true
 app:
   baseUrl: "http://localhost:5000"
   adminToken: "change-this-secret"
@@ -26,13 +26,13 @@ email:
     username: ""
     password: ""
     use_tls: true
-  fromAddress: "community@localhost"
-  replyTo: "community@localhost"
+  fromAddress: "coffee@mail.stratora.one"
+  replyTo: "coffee@mail.stratora.one"
 daemons:
   week:
     poolPeriod: 3600
 notifications:
-  dryRun: true
+  dryRun: false
 devMode:
   enabled: true
   weekday: 5

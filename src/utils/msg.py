@@ -149,7 +149,7 @@ def generate_groups(groups):
 
 
 def generate_help_msg_block(commands):
-    res = [{"type": "section", "text": {"type": "mrkdwn", "text": ":rcb: *List of Random Coffee Bot commands*"}}]
+    res = [{"type": "section", "text": {"type": "mrkdwn", "text": ":rcb: *List of Community Coffee Bot commands*"}}]
 
     for command in commands:
         res.append(

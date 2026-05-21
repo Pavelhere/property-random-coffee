@@ -17,6 +17,9 @@ class User(Base):
     pause_in_weeks = Column(String(10), nullable=False, unique=False, default="0")
     loc = Column(String(24), nullable=False, unique=False, default="none")
     meet_group = Column(String(24), nullable=False, unique=False, default="remote")
+    bio = Column(String(250), nullable=True)
+    extra_info = Column(String(500), nullable=True)
+    gender_pref = Column(String(10), nullable=True)
 
     tmst_created = Column(DateTime(timezone=True), server_default=func.now())
     tmst_updated = Column(DateTime(timezone=True), onupdate=func.now())

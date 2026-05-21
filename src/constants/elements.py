@@ -16,11 +16,11 @@ DONUT = {
 }
 
 LIST_OF_COMMANDS = [
-    ["/rcb start", "participate in Random Coffee meets"],
+    ["/rcb start", "participate in Community Coffee meets"],
     ["/rcb status", "get my current status"],
-    ["/rcb stop", "stop participating in Random Coffee"],
+    ["/rcb stop", "stop participating in Community Coffee"],
     ["/rcb continue", "continue to participate in meetings after pause"],
-    ["/rcb quit", "quit Random Coffee meets"],
+    ["/rcb quit", "quit Community Coffee meets"],
     ["/rcb change_meet_group ", 'allows to change meeting group; "remote" by default'],
     ["/rcb get_group_statistic <group_name>", "allows check group statistic for admins"],
     ["/rcb help", "shows this help"]

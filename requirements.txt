@@ -1,10 +1,12 @@
-slack_bolt==1.9.1
 loguru==0.5.3
-pyyaml==5.4.1
+pyyaml>=6.0
 sqlalchemy==1.4.25
 configparser==5.0.2
-mysqlclient==2.0.3
+mysqlclient>=2.0.3
 pydantic==1.8.1
 tabulate==0.8.9
 pytz==2022.1
 Flask==2.2.5
+gunicorn==21.2.0
+greenlet==3.1.1
+resend>=2.0.0

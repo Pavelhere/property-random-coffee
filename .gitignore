@@ -44,3 +44,7 @@ venv/
 rcb.tar
 src/*.log
 mysql_data
+.gstack/
+.venv/
+logs/
+*.log

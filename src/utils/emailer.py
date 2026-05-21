@@ -21,19 +21,40 @@ class EmailClient:
         self.reply_to = email_config.get("replyTo", self.from_address)
         self.dry_run = dry_run
 
+        self.resend_api_key = config.get("resend", {}).get("apiKey") or ""
+
     def send(self, *, to_address: str, subject: str, body: str, html: str | None = None) -> None:
         if self.dry_run:
             logger.info("[DRY-RUN] Sending email to %s: %s", to_address, subject)
             logger.debug("Email body:\n%s", body)
             return
 
+        if self.resend_api_key:
+            self._send_resend(to_address=to_address, subject=subject, body=body, html=html)
+        else:
+            self._send_smtp(to_address=to_address, subject=subject, body=body, html=html)
+
+    def _send_resend(self, *, to_address: str, subject: str, body: str, html: str | None) -> None:
+        import resend
+        resend.api_key = self.resend_api_key
+        params = {
+            "from": self.from_address,
+            "to": [to_address],
+            "subject": subject,
+            "text": body,
+        }
+        if html:
+            params["html"] = html
+        resend.Emails.send(params)
+        logger.info("Sent email via Resend to %s: %s", to_address, subject)
+
+    def _send_smtp(self, *, to_address: str, subject: str, body: str, html: str | None) -> None:
         message = EmailMessage()
         message["Subject"] = subject
         message["From"] = self.from_address
         message["To"] = to_address
         message["Reply-To"] = self.reply_to
         message.set_content(body)
-
         if html:
             message.add_alternative(html, subtype="html")
 
@@ -44,3 +65,4 @@ class EmailClient:
             if self.username and self.password:
                 server.login(self.username, self.password)
             server.send_message(message)
+        logger.info("Sent email via SMTP to %s: %s", to_address, subject)

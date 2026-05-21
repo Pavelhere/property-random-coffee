@@ -33,9 +33,14 @@ class UserRepository:
         with self.session_factory() as session:
             session.query(User).filter_by(id=user.id).update(dict(
                 username=user.username,
+                full_name=user.full_name,
+                email=user.email,
                 pause_in_weeks=user.pause_in_weeks,
                 loc=user.loc,
-                meet_group=user.meet_group
+                meet_group=user.meet_group,
+                bio=user.bio,
+                extra_info=user.extra_info,
+                gender_pref=user.gender_pref,
             ))
 
             session.commit()

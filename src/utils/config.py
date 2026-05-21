@@ -23,7 +23,12 @@ def load(yaml_path):
     config.setdefault("app", {})
     config.setdefault("community", {})
 
-    config["database"]["password"] = _env_override("DATABASE_PASSWORD", config["database"].get("password"))
+    # Railway-style MySQL env vars take precedence
+    config["database"]["host"] = _env_override("MYSQLHOST", _env_override("DATABASE_HOST", config["database"].get("host", "127.0.0.1")))
+    config["database"]["port"] = int(_env_override("MYSQLPORT", _env_override("DATABASE_PORT", config["database"].get("port", 3308))))
+    config["database"]["db"] = _env_override("MYSQLDATABASE", _env_override("DATABASE_NAME", config["database"].get("db", "coffee")))
+    config["database"]["username"] = _env_override("MYSQLUSER", _env_override("DATABASE_USER", config["database"].get("username", "root")))
+    config["database"]["password"] = _env_override("MYSQLPASSWORD", _env_override("DATABASE_PASSWORD", config["database"].get("password")))
 
     config["app"]["baseUrl"] = _env_override("APP_BASE_URL", config["app"].get("baseUrl", "http://localhost:5000"))
     config["app"]["adminToken"] = _env_override("ADMIN_TOKEN", config["app"].get("adminToken", ""))
@@ -41,6 +46,9 @@ def load(yaml_path):
 
     email_config["fromAddress"] = _env_override("EMAIL_FROM", email_config.get("fromAddress", "noreply@localhost"))
     email_config["replyTo"] = _env_override("EMAIL_REPLY_TO", email_config.get("replyTo", email_config.get("fromAddress")))
+
+    config.setdefault("resend", {})
+    config["resend"]["apiKey"] = _env_override("RESEND_API_KEY", config["resend"].get("apiKey", ""))
 
     community_groups = []
     for name, definition in config["community"].get("groups", {}).items():

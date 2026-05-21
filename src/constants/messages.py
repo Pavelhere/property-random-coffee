@@ -24,7 +24,7 @@ FLOW_PARTNER_LEFT_EOW = "It looks like your partner decided to take a break; " \
 FLOW_PARTNER_GROUP_DISABLED = "Sorry, your meeting group '{0}' is currently disabled."
 
 FLOW_PARTICIPATE_0 = "Hi there!👋\n\n" \
-                     "I'm a Random Coffee bot here to help you create real connections with people inside your company worldwide. " \
+                     "I'm a Community Coffee bot here to help you create real connections with people inside your company worldwide. " \
                      "Weekly I'll randomly pick one exciting person for you to have a meeting with. " \
                      "You both will receive each other's names; " \
                      "slack them, agree on a date and choose a platform to meet: zoom, skype, meet, etc. \n\n" \
@@ -66,7 +66,7 @@ MEET_UNSUCCESSFUL_SEARCH = "Hey!👋 \n\n" \
                            "Hope that next week will be more successful."
 
 MEET_INFO = "Hey!👋 \n\n" \
-            "Your Random Coffee partner is <@{0}>! Lucky you :)"
+            "Your Community Coffee partner is <@{0}>! Lucky you :)"
 MEET_INFO_NOT_UNIQUE = "Hey!👋 \n\n" \
                        "You are lucky, this week you have another partner, who is <@{0}>!"
 MEET_HOST = "*This week you are host*. Please, arrange a meeting."
@@ -80,7 +80,7 @@ MEET_FEEDBACK = "The week is over! \n\n" \
                 "Did you get a chance to meet up with <@{0}> for a coffee break?"
 
 MEET_NEXT = "New week – new opportunities!\n\n" \
-            "Are you taking part in Random Coffee meetings next week?"
+            "Are you taking part in Community Coffee meetings next week?"
 
 MEET_NEXT_AFTER_PAUSE = "Hey! Your break is finishing this week! :hourglass: \n\n" \
-                        "Are you taking part in Random Coffee meetings next week?"
+                        "Are you taking part in Community Coffee meetings next week?"
