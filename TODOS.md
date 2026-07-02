@@ -33,3 +33,21 @@ the `_serialize_match` N+1 in the admin matches view.
 **Depends on / blocked by:** A second complex signing (paid pilot or LOI). Do not
 build before that — see docs DECISIONS.md and the 2026-06-17 design doc's failure
 path.
+
+---
+
+## Stop logging expected-flow tracebacks on signup (QA ISSUE-002, low)
+
+**What:** Every new signup logs `Session rollback because of exception` with a full
+`UserNotFoundError` traceback — it's the normal email-not-found → create path, but
+`Database.session`'s context manager logs any exception at error level.
+
+**Why:** Log noise that reads like a production incident; makes real errors harder
+to spot on launch week.
+
+**Context:** Found by /qa on 2026-07-02 (report:
+`.gstack/qa-reports/qa-report-127-0-0-1-2026-07-02.md`). Fix options: check
+existence without raising in `join()` (e.g. a `find_by_email` returning None), or
+stop logging expected NotFound exceptions in `src/db/database.py`'s session manager.
+
+**Depends on / blocked by:** nothing; ~10 min with a test.
