@@ -1192,6 +1192,60 @@ def list_matches():
     return jsonify(matches)
 
 
+DRY_RUN_PREVIEW_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pair preview — Community Coffee Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f0;color:#151711;min-height:100vh;padding:2rem 1.25rem}
+.wrap{max-width:56rem;margin:0 auto}
+.card{background:#fff;border-radius:1.25rem;padding:1.5rem;box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.04);margin-bottom:1.5rem}
+h1{font-size:1.25rem;font-weight:700;margin-bottom:.25rem}
+.sub{font-size:.875rem;color:#5e6459;margin-bottom:1rem}
+table{width:100%;border-collapse:collapse;font-size:.875rem}
+th{text-align:left;padding:.6rem .75rem;font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:#5e6459;border-bottom:1px solid #e8ebe8}
+td{padding:.7rem .75rem;border-bottom:1px solid #f0f2f0}
+.badge{display:inline-block;padding:.2rem .625rem;border-radius:100px;font-size:.6875rem;font-weight:600;background:#edf5f0;color:#143c32}
+.warn{background:#fdf6ed;color:#b7590a}
+.btn{display:inline-block;background:#143c32;color:#fff;border-radius:.625rem;padding:.55rem 1rem;font-size:.8125rem;font-weight:600;text-decoration:none}
+.note{font-size:.8125rem;color:#5e6459;margin-top:1rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Pair preview — week {{ season }}</h1>
+    <p class="sub">Dry run: nothing was saved, nothing was sent. This is what "Run matching now" would do.</p>
+    {% if pairs %}
+    <table>
+      <thead><tr><th>Resident A</th><th>Resident B</th><th>Activity</th><th>Complex</th></tr></thead>
+      <tbody>
+        {% for p in pairs %}
+        <tr>
+          <td><strong>{{ p.a.name }}</strong><br><span style="color:#5e6459">{{ p.a.email }}</span></td>
+          <td><strong>{{ p.b.name }}</strong><br><span style="color:#5e6459">{{ p.b.email }}</span></td>
+          <td><span class="badge">{{ activity_labels.get(p.a.activity, p.a.activity) }}</span></td>
+          <td>{{ p.a.complex }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="sub">No pairs could be formed this week.</p>
+    {% endif %}
+    {% if unmatched %}
+    <p class="note"><span class="badge warn">Unmatched</span> {{ unmatched|join(', ') }}</p>
+    {% endif %}
+    <p class="note"><a class="btn" href="/admin?token={{ token }}">← Back to admin</a></p>
+  </div>
+</div>
+</body>
+</html>"""
+
+
 @app.route("/admin/matches", methods=["POST"])
 def trigger_matches():
     if not _check_admin():
@@ -1200,6 +1254,19 @@ def trigger_matches():
     force = request.args.get("force", "0").lower() in ("1", "true", "yes")
     dry_run = request.args.get("dry_run", "0").lower() in ("1", "true", "yes")
     result = matching_service.generate_matches(force=force, dry_run=dry_run)
+
+    # Browser form post from the admin panel → readable preview page.
+    # Cron / curl / JSON clients keep getting JSON.
+    wants_html = request.accept_mimetypes.accept_html and not request.is_json
+    if dry_run and wants_html:
+        return render_template_string(
+            DRY_RUN_PREVIEW_TEMPLATE,
+            season=result.get("season", ""),
+            pairs=result.get("pairs", []),
+            unmatched=result.get("unmatched", []),
+            activity_labels=ACTIVITY_LABELS,
+            token=request.args.get("token", ""),
+        )
     return jsonify(result)
 
 
