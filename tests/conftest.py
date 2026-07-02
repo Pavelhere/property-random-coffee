@@ -31,6 +31,7 @@ from db.repo.user import UserRepository  # noqa: E402
 from db.repo.meet import MeetRepository  # noqa: E402
 from db.repo.metadata import MetadataRepository  # noqa: E402
 from db.repo.match_response import MatchResponseRepository  # noqa: E402
+from db.repo.match_run import MatchRunRepository  # noqa: E402
 
 
 def _make_session_factory(engine):
@@ -59,12 +60,13 @@ def _build_repos(engine):
         MeetRepository(session_factory=sf),
         MetadataRepository(session_factory=sf),
         MatchResponseRepository(session_factory=sf),
+        MatchRunRepository(session_factory=sf),
     )
 
 
 @pytest.fixture()
 def repos(tmp_path):
-    """Fresh SQLite-backed (user, meet, metadata, match_response) repos."""
+    """Fresh SQLite-backed (user, meet, metadata, match_response, match_run) repos."""
     engine = create_engine(f"sqlite:///{tmp_path / 'unit.db'}")
     Base.metadata.create_all(engine)
     yield _build_repos(engine)

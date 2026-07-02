@@ -27,10 +27,11 @@ from db.exceptions import UserNotFoundError
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../resources/config.yml"))
 config = cfg_utils.load(CONFIG_PATH)
-user_repo, meet_repo, metadata_repo, match_response_repo = db_utils.get_repos(config)
+user_repo, meet_repo, metadata_repo, match_response_repo, match_run_repo = db_utils.get_repos(config)
 
 email_client = EmailClient(config, dry_run=config["notifications"].get("dryRun", True))
-matching_service = MatchingService(config, user_repo, meet_repo, metadata_repo, email_client)
+matching_service = MatchingService(config, user_repo, meet_repo, metadata_repo, email_client,
+                                   match_run_repo=match_run_repo)
 response_service = ResponseService(config, meet_repo, match_response_repo, user_repo, email_client)
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -794,8 +795,11 @@ tr:hover td{background:#fafbfa}
       <div class="action-block">
         <div class="action-title">Run matching</div>
         <div class="action-desc">Manually trigger this week's neighbor pairings. Matched pairs receive an intro email immediately.</div>
-        <form method="post" action="/admin/matches?token={{ token }}">
+        <form method="post" action="/admin/matches?token={{ token }}" style="display:inline-block">
           <button type="submit" class="btn-action">Run matching now</button>
+        </form>
+        <form method="post" action="/admin/matches?token={{ token }}&dry_run=1" style="display:inline-block;margin-left:.5rem">
+          <button type="submit" class="btn-action btn-secondary">Preview pairs (dry run)</button>
         </form>
       </div>
       <div class="action-block">
@@ -811,6 +815,37 @@ tr:hover td{background:#fafbfa}
     <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #e8ebe8">
       <a href="/admin/matches?token={{ token }}&format=csv" class="btn-action btn-secondary">Download matches CSV</a>
     </div>
+  </div>
+
+  <!-- MATCH RUN HISTORY -->
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-title">Match runs</div>
+      <span style="font-size:.8125rem;color:#5e6459">last {{ match_runs|length }}</span>
+    </div>
+    {% if match_runs %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>When</th><th>Week</th><th>Type</th><th>Pairs</th><th>Proposals sent</th><th>Unmatched</th></tr>
+        </thead>
+        <tbody>
+          {% for r in match_runs %}
+          <tr>
+            <td style="white-space:nowrap">{{ r.tmst_created.strftime('%b %d %H:%M') if r.tmst_created else '—' }}</td>
+            <td>{{ r.season }}</td>
+            <td><span class="badge" style="background:{% if r.dry_run %}#fdf6ed{% else %}#edf5f0{% endif %};color:{% if r.dry_run %}#b7590a{% else %}#143c32{% endif %}">{{ 'Dry run' if r.dry_run else 'Real' }}</span></td>
+            <td>{{ r.pairs_created }}</td>
+            <td>{{ r.proposals_sent }}</td>
+            <td style="color:#5e6459;max-width:16rem" class="truncate">{{ r.unmatched or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">No match runs yet. Use "Preview pairs" before the first real Monday.</div>
+    {% endif %}
   </div>
 
   <!-- PARTICIPANTS TABLE -->
@@ -1088,6 +1123,7 @@ def admin_panel():
         community_name=community_name,
         user_status=user_status,
         active_count=active_count,
+        match_runs=match_run_repo.list()[:10],
     )
 
 
@@ -1162,7 +1198,8 @@ def trigger_matches():
         return jsonify({"error": "Unauthorized"}), 401
 
     force = request.args.get("force", "0").lower() in ("1", "true", "yes")
-    result = matching_service.generate_matches(force=force)
+    dry_run = request.args.get("dry_run", "0").lower() in ("1", "true", "yes")
+    result = matching_service.generate_matches(force=force, dry_run=dry_run)
     return jsonify(result)
 
 

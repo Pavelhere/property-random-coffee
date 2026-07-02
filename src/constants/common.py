@@ -9,6 +9,7 @@ class DBTables:
     meet: str = 'meet'
     meta: str = 'meta'
     match_response: str = 'match_response'
+    match_run: str = 'match_run'
 
 
 DB_TABLES = DBTables()

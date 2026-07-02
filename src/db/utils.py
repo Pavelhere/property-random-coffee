@@ -5,6 +5,7 @@ from db.repo.user import UserRepository
 from db.repo.meet import MeetRepository
 from db.repo.metadata import MetadataRepository
 from db.repo.match_response import MatchResponseRepository
+from db.repo.match_run import MatchRunRepository
 
 _db_instance = None
 
@@ -28,11 +29,12 @@ def get_database(config):
 
 
 def get_repos(config):
-    """Return (user_repo, meet_repo, metadata_repo, match_response_repo)."""
+    """Return (user, meet, metadata, match_response, match_run) repos."""
     db = get_database(config)
     return (
         UserRepository(session_factory=db.session),
         MeetRepository(session_factory=db.session),
         MetadataRepository(session_factory=db.session),
         MatchResponseRepository(session_factory=db.session),
+        MatchRunRepository(session_factory=db.session),
     )

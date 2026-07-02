@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from utils import config as cfg_utils
 from utils import emails, links, season
 from models.metadata import Metadata
+from models.match_run import MatchRun
 from db.exceptions import MetadataNotFoundError, UserNotFoundError
 
 
@@ -25,12 +26,14 @@ class MatchingService:
                                                               accept/decline)
     """
 
-    def __init__(self, config, user_repo, meet_repo, metadata_repo, email_client):
+    def __init__(self, config, user_repo, meet_repo, metadata_repo, email_client,
+                 match_run_repo=None):
         self.config = config
         self.user_repo = user_repo
         self.meet_repo = meet_repo
         self.metadata_repo = metadata_repo
         self.email_client = email_client
+        self.match_run_repo = match_run_repo
         self.base_url = config["app"].get("baseUrl", "").rstrip("/")
         self.response_secret = config["app"].get("responseSecret")
 
@@ -39,17 +42,20 @@ class MatchingService:
         if not self.response_secret:
             raise ValueError("app.responseSecret is required for matching service")
 
-    def generate_matches(self, *, force=False):
+    def generate_matches(self, *, force=False, dry_run=False):
         now = cfg_utils.community_now(self.config)
         season_id = season.get(now=now)
 
-        # Atomic claim: inserting the unique MATCH_RUN row either succeeds
-        # (we own this week's run) or hits the unique index (someone already
-        # ran it). Check-then-act is not enough — double-cron, retries, or
-        # two gunicorn workers would race it.
-        if not self._claim_run(season_id) and not force:
-            logger.info("Skipping match generation for season %s (already processed)", season_id)
-            return {"status": "skipped", "season": season_id}
+        # Dry runs never claim the week, never write meets, never send —
+        # pure preview so the founder can inspect Monday's pairs first.
+        if not dry_run:
+            # Atomic claim: inserting the unique MATCH_RUN row either succeeds
+            # (we own this week's run) or hits the unique index (someone
+            # already ran it). Check-then-act is not enough — double-cron,
+            # retries, or two gunicorn workers would race it.
+            if not self._claim_run(season_id) and not force:
+                logger.info("Skipping match generation for season %s (already processed)", season_id)
+                return {"status": "skipped", "season": season_id}
 
         enabled_groups = {group["name"]: group for group in self.config["community"].get("enabledGroups", [])}
         today = now.date()
@@ -65,16 +71,31 @@ class MatchingService:
             grouped_users.setdefault((user.loc, user.meet_group), []).append(user)
 
         considered = []
+        all_pairs = []
         for (loc, group_name), members in grouped_users.items():
             group_definition = enabled_groups[group_name]
             additional = group_definition.get("additionalUsers", [])
-            self.meet_repo.create(
+            pairs = self.meet_repo.create(
                 uids=[user.id for user in members],
                 additional_uids=additional,
                 compatible=self._compatibility_checker(members),
                 season_id=season_id,
+                dry_run=dry_run,
             )
+            all_pairs.extend(pairs)
             considered.extend(members)
+
+        if dry_run:
+            unmatched = self._unmatched_from_pairs(season_id, considered, all_pairs)
+            result = {
+                "status": "dry_run",
+                "season": season_id,
+                "pairs": [self._pair_preview(u1, u2) for u1, u2 in all_pairs],
+                "unmatched": [u.email for u in unmatched],
+            }
+            self._record_run(season_id, dry_run=True, pairs=len(all_pairs),
+                             sent=0, unmatched=unmatched)
+            return result
 
         unmatched = self._unmatched_users(season_id, considered)
         if unmatched:
@@ -85,6 +106,8 @@ class MatchingService:
 
         proposals_sent = self._send_proposals(season_id)
         self._mark_run_done(season_id)
+        self._record_run(season_id, dry_run=False, pairs=len(all_pairs),
+                         sent=proposals_sent, unmatched=unmatched)
 
         return {
             "status": "ok",
@@ -92,6 +115,36 @@ class MatchingService:
             "proposals_sent": proposals_sent,
             "unmatched": [u.email for u in unmatched],
         }
+
+    def _pair_preview(self, uid1, uid2):
+        def _info(uid):
+            try:
+                u = self.user_repo.get_by_id(uid)
+                return {"name": u.full_name or u.username, "email": u.email,
+                        "activity": u.meet_group, "complex": u.loc}
+            except UserNotFoundError:
+                return {"name": uid, "email": None, "activity": None, "complex": None}
+        return {"a": _info(uid1), "b": _info(uid2)}
+
+    def _unmatched_from_pairs(self, season_id, considered, pairs):
+        """Unmatched computation for dry runs (pairs not persisted)."""
+        matched_ids = {uid for pair in pairs for uid in pair}
+        for meet in self.meet_repo.list(spec={"season": season_id}):
+            matched_ids.add(meet.uid1)
+            matched_ids.add(meet.uid2)
+        return [u for u in considered if u.id not in matched_ids]
+
+    def _record_run(self, season_id, *, dry_run, pairs, sent, unmatched):
+        if not self.match_run_repo:
+            return
+        try:
+            self.match_run_repo.add(MatchRun(
+                season=season_id, dry_run=dry_run, status="ok",
+                pairs_created=pairs, proposals_sent=sent,
+                unmatched=", ".join(u.email or u.id for u in unmatched)[:2000],
+            ))
+        except Exception as exc:
+            logger.error("Failed to record match run: %s", exc)
 
     @staticmethod
     def _is_active(user, today):

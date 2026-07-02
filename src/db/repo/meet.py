@@ -22,22 +22,27 @@ class MeetRepository:
         self.session_factory = session_factory
 
     def create(self, uids, additional_uids=None, kind='random', compatible=None,
-               season_id=None):
-        """Create pairs for this season.
+               season_id=None, dry_run=False):
+        """Create pairs for this season. Returns the list of (uid1, uid2).
 
         compatible: optional (uid_a, uid_b) -> bool predicate; pairs failing
         it are never created (mutual gender preferences).
         season_id: pass the caller's (property-timezone) season so pairing
         and proposal sending agree on the week.
+        dry_run: compute and return the pairs but write nothing — used by
+        the admin preview so the founder can see Monday's pairs before any
+        email exists.
         """
-        logger.info("Starting algorithm to create meets")
+        logger.info("Starting algorithm to create meets%s", " (dry run)" if dry_run else "")
 
         if additional_uids is None:
             additional_uids = []
+        pairs = []
         if kind == 'random':
-            self.__create_random(uids, additional_uids, compatible, season_id)
+            pairs = self.__create_random(uids, additional_uids, compatible, season_id, dry_run)
 
         logger.info("Algorithm for creating pairs has successfully completed")
+        return pairs
 
     def _have_met(self, uid1, uid2):
         """True if this pair has EVER been matched (any prior week).
@@ -55,15 +60,22 @@ class MeetRepository:
                 )
             ).count() > 0
 
-    def __create_random(self, uids, additional_users, compatible=None, season_id=None):
+    def __create_random(self, uids, additional_users, compatible=None, season_id=None,
+                        dry_run=False):
         season_id = season_id or season.get()
 
+        created_pairs = []
         for_rand_distr = []
+
+        def _already_matched(uid):
+            if any(uid in pair for pair in created_pairs):
+                return True
+            return self.is_exist(season_id, {"or": {"uid1": uid, "uid2": uid}})
 
         while len(uids) >= 1:
             cur_uid = uids[0]
 
-            if self.is_exist(season_id, {"or": {"uid1": cur_uid, "uid2": cur_uid}}):
+            if _already_matched(cur_uid):
                 uids.remove(cur_uid)
                 continue
 
@@ -71,30 +83,20 @@ class MeetRepository:
                 for_rand_distr.append(cur_uid)
                 break
 
-            with self.session_factory() as session:
-                # take all meets in the current season
-                meets = session.query(Meet).filter_by(season=season_id)
-
-            # Take a shuffled list of available users who do not have a meet in the current season
+            # Shuffled candidates without a meet this season, passing the
+            # compatibility predicate
             potential = []
             for uid in uids:
                 if uid == cur_uid:
                     continue
                 if compatible and not compatible(cur_uid, uid):
                     continue
-                take = True
-                for meet in meets:
-                    if uid in [meet.uid1, meet.uid2]:
-                        take = False
-                        break
-                if take:
+                if not _already_matched(uid):
                     potential.append(uid)
 
             random.shuffle(potential)
 
-            # First shuffled candidate this resident has never met. (The old
-            # code punted cur_uid to the fallback pool if the FIRST candidate
-            # was a repeat, even when fresh candidates existed further down.)
+            # First shuffled candidate this resident has never met.
             pair_uid = None
             for candidate in potential:
                 if not self._have_met(cur_uid, candidate):
@@ -102,9 +104,10 @@ class MeetRepository:
                     break
 
             if pair_uid is not None:
-                self.add(Meet(season=season_id, uid1=cur_uid, uid2=pair_uid))
+                created_pairs.append((cur_uid, pair_uid))
                 uids.remove(pair_uid)
-                logger.info(f"Meet created for pair ({cur_uid}, {pair_uid})")
+                uids.remove(cur_uid)
+                logger.info(f"Pair formed ({cur_uid}, {pair_uid})")
             else:
                 logger.info(f"No never-met candidate for {cur_uid}; deferring to fallback pool")
                 for_rand_distr.append(cur_uid)
@@ -123,24 +126,27 @@ class MeetRepository:
                     continue
 
                 uid2 = random.choice(candidates)
-                self.add(Meet(season=season_id, uid1=uid1, uid2=uid2))
+                created_pairs.append((uid1, uid2))
                 for_rand_distr.remove(uid1)
                 for_rand_distr.remove(uid2)
-                logger.info(f"Meet created for pair ({uid1}, {uid2})")
+                logger.info(f"Pair formed via fallback ({uid1}, {uid2})")
 
         if len(for_rand_distr) == 1:
             uid1 = for_rand_distr[0]
             if additional_users:
                 uid2 = random.choice(additional_users)
                 if uid1 != uid2:
-                    logger.info(f"Meet created for pair ({uid1}, {uid2}); Pair has taken from additionalUsers")
-                    self.add(Meet(season=season_id, uid1=uid1, uid2=uid2))
-                else:
-                    logger.debug(
-                        f"Meet wasn't created for pair ({uid1}, {uid2}) because uid1 = uid2; Pair has taken from additionalUsers.")
+                    logger.info(f"Pair formed ({uid1}, {uid2}) from additionalUsers")
+                    created_pairs.append((uid1, uid2))
 
             else:
                 logger.info(f"List of additional users is empty. Meet can not be created for user {uid1}")
+
+        if not dry_run:
+            for uid1, uid2 in created_pairs:
+                self.add(Meet(season=season_id, uid1=uid1, uid2=uid2))
+
+        return created_pairs
 
     def is_exist(self, season, spec: Mapping = None):
         with self.session_factory() as session:
