@@ -420,6 +420,7 @@ footer{max-width:72rem;margin:0 auto;padding:0 1.25rem 2.5rem;display:flex;flex-
               <div>
                 <p class="expect-title">What to expect</p>
                 <p class="expect-text">Your first match will arrive by email. From there, you can accept, decline, or pause anytime.</p>
+                <p class="expect-text" style="margin-top:.5rem">Already had a profile with this email? Nothing changed yet — we emailed you a secure link to confirm your updates.</p>
               </div>
             </div>
           </div>
@@ -696,6 +697,7 @@ a.btn{display:inline-block;background:#143c32;color:#fff;border-radius:100px;pad
       <div>
         <p class="expect-title">What to expect</p>
         <p class="expect-text">Your first match will arrive by email. From there, you can accept, decline, or pause anytime.</p>
+        <p class="expect-text" style="margin-top:.5rem">Already had a profile with this email? Nothing changed yet — we emailed you a secure link to confirm your updates.</p>
       </div>
     </div>
   </div>
