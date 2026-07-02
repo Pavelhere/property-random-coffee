@@ -94,6 +94,7 @@ def app_main(_app_module):
     with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             conn.execute(table.delete())
+    main._THROTTLE.clear()
     return main
 
 

@@ -2,6 +2,7 @@
 
 import hmac
 import os
+import time
 import uuid
 import csv
 import io
@@ -898,6 +899,23 @@ def _check_admin():
     return hmac.compare_digest(token, admin_token)
 
 
+# In-memory throttle for the unauthenticated email-sending endpoint (/join).
+# Per gunicorn worker (2 workers => effective limits are ~2x) — good enough to
+# stop a bot from burning the Resend daily quota before Monday's match emails.
+_THROTTLE = {}
+
+
+def _throttled(key, limit, window_seconds):
+    now = time.time()
+    hits = [t for t in _THROTTLE.get(key, []) if now - t < window_seconds]
+    if len(hits) >= limit:
+        _THROTTLE[key] = hits
+        return True
+    hits.append(now)
+    _THROTTLE[key] = hits
+    return False
+
+
 @app.route("/", methods=["GET"])
 def home():
     groups = config["community"].get("enabledGroups", [])
@@ -964,20 +982,38 @@ def join():
     if not request.is_json and not payload.get("consent"):
         return _form_error("Please agree to receive match emails to continue.")
 
+    # Throttle: /join sends an email on every submit — unthrottled, a bot
+    # could burn the email quota. Per-IP and per-email cooldowns.
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "?").split(",")[0].strip()
+    if _throttled(f"ip:{ip}", limit=5, window_seconds=600) or \
+            _throttled(f"email:{email}", limit=2, window_seconds=600):
+        logger.warning("Throttled /join from %s for %s", ip, email)
+        if request.is_json:
+            return jsonify({"error": "Too many attempts — try again later"}), 429
+        body, _ = _form_error("Too many attempts — please try again in a few minutes.")
+        return body, 429
+
+    community_name = config["community"].get("displayName", "Community")
+    base_url = config["app"]["baseUrl"]
+    secret = config["app"]["responseSecret"]
+
     try:
-        user = user_repo.get_by_email(email)
-        user.full_name = full_name
-        user.username = full_name
-        user.email = email
-        user.meet_group = meet_group
-        user.pause_in_weeks = cadence
-        user.bio = bio
-        user.extra_info = extra_info
-        user.gender = gender
-        user.gender_pref = gender_pref
-        user_repo.update(user)
-        created = False
+        existing = user_repo.get_by_email(email)
     except UserNotFoundError:
+        existing = None
+
+    if existing is not None:
+        # Existing email: do NOT touch the profile. Only the inbox owner may
+        # change it, via a signed, expiring edit link. Response is identical
+        # to the created path (no email enumeration).
+        try:
+            edit_link = links.edit_url(base_url, secret, existing.id)
+            subject, body, html = emails.profile_edit_email(
+                existing.full_name or existing.username, community_name, edit_link)
+            email_client.send(to_address=email, subject=subject, body=body, html=html)
+        except Exception as exc:
+            logger.error("Failed to send edit-link email to %s: %s", email, exc)
+    else:
         user = User(
             id=str(uuid.uuid4()),
             username=full_name,
@@ -992,20 +1028,16 @@ def join():
             gender_pref=gender_pref,
         )
         user_repo.add(user)
-        created = True
-
-    # Send confirmation email
-    community_name = config["community"].get("displayName", "Community")
-    try:
-        prefs_url = links.preferences_url(
-            config["app"]["baseUrl"], config["app"]["responseSecret"], user.id)
-        subject, body, html = emails.confirmation_email(full_name, community_name, prefs_url)
-        email_client.send(to_address=email, subject=subject, body=body, html=html)
-    except Exception as exc:
-        logger.error("Failed to send confirmation email to %s: %s", email, exc)
+        try:
+            prefs_url = links.preferences_url(base_url, secret, user.id)
+            subject, body, html = emails.confirmation_email(full_name, community_name, prefs_url)
+            email_client.send(to_address=email, subject=subject, body=body, html=html)
+        except Exception as exc:
+            logger.error("Failed to send confirmation email to %s: %s", email, exc)
 
     if request.is_json:
-        return jsonify({"status": "ok", "message": "Profile created" if created else "Profile updated"})
+        # Same response either way — reveals nothing about who is registered.
+        return jsonify({"status": "ok", "message": "Check your email"})
 
     return render_template_string(THANK_YOU_TEMPLATE, community_name=community_name)
 
@@ -1220,6 +1252,160 @@ def _status_page(meet, uid, action):
         headline="No problem.",
         message="We\'ll pair you with someone new next Monday.",
         icon="—", icon_bg="#edf5f0", icon_color="#143c32",
+    )
+
+
+EDIT_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Update your profile — Community Coffee</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5ede3;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;color:#1a1f18}
+.card{width:100%;max-width:480px;background:#fff;border-radius:24px;padding:2.5rem 2rem;box-shadow:0 8px 40px rgba(26,31,24,0.1)}
+h1{font-size:22px;font-weight:700;margin:0 0 4px;letter-spacing:-0.3px}
+.sub{font-size:14px;color:#5a6356;margin-bottom:1.5rem}
+label.f{display:block;font-size:13px;font-weight:600;color:#3f4338;margin:1rem 0 .4rem}
+input[type=text],textarea{width:100%;border:1px solid #ddd;border-radius:12px;padding:.7rem .9rem;font:inherit;font-size:14px}
+textarea{min-height:5rem;resize:vertical}
+.pills{display:flex;flex-wrap:wrap;gap:.5rem}
+.pill{display:flex;align-items:center;gap:.4rem;border:1px solid #ddd;border-radius:100px;padding:.5rem .9rem;font-size:13px;cursor:pointer}
+.pill input{accent-color:#143c32}
+button.save{width:100%;margin-top:1.5rem;background:#143c32;color:#f5ede3;border:none;border-radius:100px;padding:.9rem;font-size:15px;font-weight:600;cursor:pointer}
+.note{font-size:12px;color:#8a9386;margin-top:1rem;text-align:center}
+{% if error %}.err{background:#fdf0ef;color:#c0392b;border-radius:10px;padding:.6rem .9rem;font-size:13px;margin-bottom:1rem}{% endif %}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Update your profile</h1>
+  <p class="sub">{{ user.email }} — your email can't be changed here.</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post" action="/profile/edit">
+    <input type="hidden" name="uid" value="{{ uid }}">
+    <input type="hidden" name="exp" value="{{ exp }}">
+    <input type="hidden" name="signature" value="{{ signature }}">
+
+    <label class="f">Name or nickname</label>
+    <input type="text" name="full_name" required value="{{ user.full_name or user.username }}">
+
+    <label class="f">Short bio</label>
+    <textarea name="bio" required maxlength="250">{{ user.bio or '' }}</textarea>
+
+    <label class="f">Life context</label>
+    <div class="pills">
+      {% for tag in life_context_options %}
+      <label class="pill"><input type="checkbox" name="life_context" value="{{ tag }}"
+        {% if tag in current_tags %}checked{% endif %}> {{ tag }}</label>
+      {% endfor %}
+    </div>
+
+    <label class="f">Preferred way to meet</label>
+    <div class="pills">
+      {% for group in groups %}
+      <label class="pill"><input type="radio" name="meet_group" value="{{ group.name }}" required
+        {% if user.meet_group == group.name %}checked{% endif %}> {{ group.displayName }}</label>
+      {% endfor %}
+    </div>
+
+    <label class="f">I am…</label>
+    <div class="pills">
+      <label class="pill"><input type="radio" name="gender" value="woman" {% if user.gender == 'woman' %}checked{% endif %} required> A woman</label>
+      <label class="pill"><input type="radio" name="gender" value="man" {% if user.gender == 'man' %}checked{% endif %}> A man</label>
+      <label class="pill"><input type="radio" name="gender" value="unspecified" {% if user.gender not in ('woman','man') %}checked{% endif %}> Prefer not to say</label>
+    </div>
+
+    <label class="f">Who are you comfortable meeting?</label>
+    <div class="pills">
+      <label class="pill"><input type="radio" name="gender_pref" value="any" {% if user.gender_pref == 'any' or not user.gender_pref %}checked{% endif %} required> No preference</label>
+      <label class="pill"><input type="radio" name="gender_pref" value="women" {% if user.gender_pref == 'women' %}checked{% endif %}> Women only</label>
+      <label class="pill"><input type="radio" name="gender_pref" value="men" {% if user.gender_pref == 'men' %}checked{% endif %}> Men only</label>
+    </div>
+
+    <button type="submit" class="save">Save profile</button>
+    <p class="note">This link came from your email and expires after 2 days.</p>
+  </form>
+</div>
+</body>
+</html>"""
+
+
+def _edit_check(values):
+    """Validate a signed /profile/edit token. Returns (user, error_response)."""
+    uid = values.get("uid", "")
+    exp = values.get("exp", "")
+    signature = values.get("signature", "")
+    if not links.verify(config["app"]["responseSecret"], "edit", uid, exp, signature):
+        return None, Response("Invalid or expired link — request a fresh one from the signup page", status=400)
+    try:
+        user = user_repo.get_by_id(uid)
+    except UserNotFoundError:
+        return None, Response("Invalid or expired link", status=400)
+    return user, None
+
+
+def _render_edit_form(user, values, error=None):
+    current_tags = [t.strip() for t in (user.extra_info or "").split(",") if t.strip()]
+    return render_template_string(
+        EDIT_TEMPLATE,
+        user=user,
+        uid=values.get("uid", ""),
+        exp=values.get("exp", ""),
+        signature=values.get("signature", ""),
+        groups=config["community"].get("enabledGroups", []),
+        life_context_options=LIFE_CONTEXT_OPTIONS,
+        current_tags=current_tags,
+        error=error,
+    )
+
+
+@app.route("/profile/edit", methods=["GET"])
+def profile_edit_form():
+    user, error = _edit_check(request.args)
+    if error:
+        return error
+    return _render_edit_form(user, request.args)
+
+
+@app.route("/profile/edit", methods=["POST"])
+def profile_edit_save():
+    user, error = _edit_check(request.form)
+    if error:
+        return error
+
+    full_name = (request.form.get("full_name") or "").strip()
+    bio = (request.form.get("bio") or "").strip()[:250]
+    meet_group = (request.form.get("meet_group") or "").strip()
+    gender = (request.form.get("gender") or "unspecified").strip()
+    gender_pref = (request.form.get("gender_pref") or "any").strip()
+    life_context_raw = request.form.getlist("life_context")
+
+    permitted_groups = {g["name"] for g in config["community"].get("enabledGroups", [])}
+    if not full_name or not bio or meet_group not in permitted_groups:
+        return _render_edit_form(user, request.form, error="Please fill in all required fields."), 400
+    if gender not in ("woman", "man", "unspecified"):
+        gender = "unspecified"
+    if gender_pref not in ("any", "women", "men"):
+        gender_pref = "any"
+
+    user.full_name = full_name
+    user.username = full_name
+    user.bio = bio
+    user.meet_group = meet_group
+    user.gender = gender
+    user.gender_pref = gender_pref
+    user.extra_info = ", ".join(t for t in life_context_raw if t in LIFE_CONTEXT_OPTIONS)
+    # Saving via the emailed link is an explicit "I want in" — clear opt-outs.
+    user.unsubscribed = False
+    user.paused_until = None
+    user_repo.update(user)
+    logger.info("Profile updated via edit link for %s", user.id)
+
+    return _respond_page(
+        headline="Profile updated.",
+        message="Your changes are saved — see you at the next Monday match.",
     )
 
 

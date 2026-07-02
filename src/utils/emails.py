@@ -149,6 +149,53 @@ def match_proposal_email(*, recipient_name, peer_name, peer_bio, peer_activity,
     return subject, body, html
 
 
+def profile_edit_email(name, community_name, edit_link):
+    """Sent when someone signs up with an already-registered email.
+
+    The profile is NOT changed by the signup form in that case — only the
+    owner of the inbox can change it, through this signed link (expires in
+    2 days). This is what stops a neighbor from rewriting someone else's
+    profile just by knowing their email.
+    """
+    subject = f"Update your profile — {community_name}"
+    body = (
+        f"Hi {name},\n\n"
+        f"Someone (hopefully you!) used this email on the {community_name} signup "
+        "page. Your existing profile was NOT changed.\n\n"
+        "To update your profile, use this link (valid for 2 days):\n"
+        f"{edit_link}\n\n"
+        "If this wasn't you, you can ignore this email — nothing changed.\n\n"
+        f"— Community Coffee"
+    )
+    html = f"""
+<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1a1a1a">
+  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#888;margin:0 0 12px">
+    {escape(community_name)}
+  </p>
+  <h1 style="font-size:24px;margin:0 0 16px">You're already in, {escape(name)}!</h1>
+  <p style="font-size:16px;color:#444;line-height:1.6">
+    Someone (hopefully you) used this email on the signup page. Your existing
+    profile was <strong>not changed</strong>.
+  </p>
+  <p style="font-size:16px;color:#444;line-height:1.6">
+    Want to update your bio or preferences? Use the button below — the link
+    works for 2 days.
+  </p>
+  <div style="margin:28px 0">
+    <a href="{escape(edit_link)}"
+       style="display:inline-block;background:#0d3d3a;color:#f5ede3;text-decoration:none;
+              padding:14px 28px;border-radius:8px;font-size:15px;font-weight:500">
+      Update my profile
+    </a>
+  </div>
+  <p style="font-size:13px;color:#aaa">
+    Wasn't you? Ignore this email — nothing changed. — Community Coffee
+  </p>
+</div>
+"""
+    return subject, body, html
+
+
 def _person_block(name, email, bio, extra_info):
     avatar = escape(name[0].upper()) if name else "?"
     tags = _tags_html(extra_info, bg="#edf5f0", color="#143c32")
