@@ -122,3 +122,18 @@ when a real decision is made. No hooks yet.
 repo, and is independent of Claude's session storage. Beats mining `.jsonl`
 transcripts or third-party tools.
 **Result:** This file created and seeded. CLAUDE.md added. Workflow in effect.
+
+## 2026-07-02 — Delete legacy Slack code (supersedes part of 2026-04-29)
+
+**Context:** The 2026-04-29 rebuild kept the Slack-era code "to avoid losing working
+logic." Five product pivots later it was all unreachable from the Flask app, and
+`docs/todo.md` was 100% Slack-era items. Every session (human or AI) that read the
+repo had to re-discover which half was dead.
+**Decision:** Delete `legacy_slack_main.py`, `daemons/week.py`, Slack message/element
+constants, rating + notification models/repos, and Slack-only utils (`msg`, `groups`,
+`time`), plus stale `docs/todo.md` (replaced by `TODOS.md` with full-context entries).
+**Why:** Git history preserves everything; dead code in the working tree only misleads.
+The one live piece buried in week.py (pause aging) is being reimplemented properly as
+a `paused_until` date in the launch-readiness pass (see eng review, 2026-07-01).
+**Result:** Repo now describes exactly one product. `db/utils.get_repos()` returns the
+four repos the app actually uses.

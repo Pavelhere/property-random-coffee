@@ -20,7 +20,7 @@ from db.exceptions import UserNotFoundError
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../resources/config.yml"))
 config = cfg_utils.load(CONFIG_PATH)
-user_repo, _, _, meet_repo, metadata_repo, match_response_repo = db_utils.get_repos_with_responses(config)
+user_repo, meet_repo, metadata_repo, match_response_repo = db_utils.get_repos(config)
 
 email_client = EmailClient(config, dry_run=config["notifications"].get("dryRun", True))
 matching_service = MatchingService(config, user_repo, meet_repo, metadata_repo, email_client)
