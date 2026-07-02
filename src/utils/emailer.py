@@ -25,8 +25,8 @@ class EmailClient:
 
     def send(self, *, to_address: str, subject: str, body: str, html: str | None = None, cc_address: str | None = None) -> None:
         if self.dry_run:
-            logger.info("[DRY-RUN] Sending email to %s (cc: %s): %s", to_address, cc_address or "—", subject)
-            logger.debug("Email body:\n%s", body)
+            logger.info(f"[DRY-RUN] Sending email to {to_address} (cc: {cc_address or "—"}): {subject}")
+            logger.debug(f"Email body:\n{body}")
             return
 
         if self.resend_api_key:
@@ -49,7 +49,7 @@ class EmailClient:
         if html:
             params["html"] = html
         resend.Emails.send(params)
-        logger.info("Sent email via Resend to %s (cc: %s): %s", to_address, cc_address or "—", subject)
+        logger.info(f"Sent email via Resend to {to_address} (cc: {cc_address or "—"}): {subject}")
 
     def _send_smtp(self, *, to_address: str, subject: str, body: str, html: str | None, cc_address: str | None = None) -> None:
         message = EmailMessage()
@@ -70,4 +70,4 @@ class EmailClient:
             if self.username and self.password:
                 server.login(self.username, self.password)
             server.send_message(message)
-        logger.info("Sent email via SMTP to %s: %s", to_address, subject)
+        logger.info(f"Sent email via SMTP to {to_address}: {subject}")

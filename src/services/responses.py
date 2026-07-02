@@ -62,8 +62,7 @@ class ResponseService:
         # Terminal states: late clicks from old emails are no-ops. This is the
         # guard that makes the connection email fire at most once per meet.
         if meet.status in self.TERMINAL_STATUSES:
-            logger.info("Meet %s already %s — ignoring %s by %s",
-                        meet_id, meet.status, action, uid)
+            logger.info(f"Meet {meet_id} already {meet.status} — ignoring {action} by {uid}")
             return meet.status
 
         # Record this response (skip exact duplicates from re-clicks)
@@ -81,18 +80,18 @@ class ResponseService:
         if "decline" in actions_by_uid.values():
             meet.status = "declined"
             self.meet_repo.update(meet)
-            logger.info("Meet %s declined", meet_id)
+            logger.info(f"Meet {meet_id} declined")
         elif uid1_action == "accept" and uid2_action == "accept":
             meet.status = "connected"
             self.meet_repo.update(meet)
-            logger.info("Both accepted meet %s — sending connection email", meet_id)
+            logger.info(f"Both accepted meet {meet_id} — sending connection email")
             self._send_connection_email(meet)
         else:
             meet.status = "pending"
             self.meet_repo.update(meet)
-            logger.info("Meet %s pending — waiting for second response", meet_id)
+            logger.info(f"Meet {meet_id} pending — waiting for second response")
 
-        logger.info("Recorded %s for meet %s by %s", action, meet_id, uid)
+        logger.info(f"Recorded {action} for meet {meet_id} by {uid}")
         return meet.status
 
     def get_response_state(self, meet_id, uid):
@@ -123,13 +122,13 @@ class ResponseService:
             user1 = self.user_repo.get_by_id(meet.uid1)
             user2 = self.user_repo.get_by_id(meet.uid2)
         except UserNotFoundError as exc:
-            logger.error("Cannot send connection email for meet %s: %s", meet.id, exc)
+            logger.error(f"Cannot send connection email for meet {meet.id}: {exc}")
             return
 
         # Unsubscribed mid-flow (accepted, then unsubscribed before the peer
         # answered): honor it — no further email of any type.
         if user1.unsubscribed or user2.unsubscribed:
-            logger.info("Meet %s connected but a participant unsubscribed — suppressing email", meet.id)
+            logger.info(f"Meet {meet.id} connected but a participant unsubscribed — suppressing email")
             return
 
         subject, plain, html = emails.connection_email(
@@ -146,9 +145,9 @@ class ResponseService:
                 html=html,
                 cc_address=user2.email,
             )
-            logger.info("Sent connection email for meet %s", meet.id)
+            logger.info(f"Sent connection email for meet {meet.id}")
         except Exception as exc:
-            logger.error("Failed to send connection email for meet %s: %s", meet.id, exc)
+            logger.error(f"Failed to send connection email for meet {meet.id}: {exc}")
 
     def _signature(self, meet_id, uid, action):
         data = f"{meet_id}|{uid}|{action}".encode("utf-8")

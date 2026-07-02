@@ -1040,7 +1040,7 @@ def join():
     ip = request.headers.get("X-Forwarded-For", request.remote_addr or "?").split(",")[0].strip()
     if _throttled(f"ip:{ip}", limit=5, window_seconds=600) or \
             _throttled(f"email:{email}", limit=2, window_seconds=600):
-        logger.warning("Throttled /join from %s for %s", ip, email)
+        logger.warning(f"Throttled /join from {ip} for {email}")
         if request.is_json:
             return jsonify({"error": "Too many attempts — try again later"}), 429
         body, _ = _form_error("Too many attempts — please try again in a few minutes.")
@@ -1065,7 +1065,7 @@ def join():
                 existing.full_name or existing.username, community_name, edit_link)
             email_client.send(to_address=email, subject=subject, body=body, html=html)
         except Exception as exc:
-            logger.error("Failed to send edit-link email to %s: %s", email, exc)
+            logger.error(f"Failed to send edit-link email to {email}: {exc}")
     else:
         user = User(
             id=str(uuid.uuid4()),
@@ -1086,7 +1086,7 @@ def join():
             subject, body, html = emails.confirmation_email(full_name, community_name, prefs_url)
             email_client.send(to_address=email, subject=subject, body=body, html=html)
         except Exception as exc:
-            logger.error("Failed to send confirmation email to %s: %s", email, exc)
+            logger.error(f"Failed to send confirmation email to {email}: {exc}")
 
     if request.is_json:
         # Same response either way — reveals nothing about who is registered.
@@ -1159,10 +1159,10 @@ def admin_test_email():
             body=body,
             html=html,
         )
-        logger.info("Test email sent to %s", to)
+        logger.info(f"Test email sent to {to}")
         message = f"Test email sent to {to}!"
     except Exception as exc:
-        logger.error("Failed to send test email to %s: %s", to, exc)
+        logger.error(f"Failed to send test email to {to}: {exc}")
         message = f"Failed to send: {exc}"
 
     return render_template_string(
@@ -1456,7 +1456,7 @@ def profile_edit_save():
     user.unsubscribed = False
     user.paused_until = None
     user_repo.update(user)
-    logger.info("Profile updated via edit link for %s", user.id)
+    logger.info(f"Profile updated via edit link for {user.id}")
 
     return _respond_page(
         headline="Profile updated.",
@@ -1573,7 +1573,7 @@ def preferences_act():
     else:
         return Response("Unknown action", status=400)
 
-    logger.info("Preferences change for %s: %s", user.id, action)
+    logger.info(f"Preferences change for {user.id}: {action}")
     return _respond_page(headline=headline, message=message,
                          icon="✓", icon_bg="#143c32", icon_color="#f5ede3")
 
@@ -1593,7 +1593,7 @@ def respond_confirm():
     try:
         meet, my_action = response_service.get_response_state(meet_id_int, uid)
     except Exception as exc:
-        logger.error("Failed to load respond state: %s", exc)
+        logger.error(f"Failed to load respond state: {exc}")
         return Response("Unable to load this match", status=400)
 
     # Meet already settled (or this resident already answered): show state.
@@ -1645,7 +1645,7 @@ def respond_act():
     try:
         response_service.record_response(meet_id_int, uid, action)
     except Exception as exc:
-        logger.error("Failed to store response: %s", exc)
+        logger.error(f"Failed to store response: {exc}")
         return Response("Unable to record response", status=400)
 
     meet = meet_repo.get_by_id(meet_id_int)

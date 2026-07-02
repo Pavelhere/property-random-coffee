@@ -54,7 +54,7 @@ class MatchingService:
             # already ran it). Check-then-act is not enough — double-cron,
             # retries, or two gunicorn workers would race it.
             if not self._claim_run(season_id) and not force:
-                logger.info("Skipping match generation for season %s (already processed)", season_id)
+                logger.info(f"Skipping match generation for season {season_id} (already processed)")
                 return {"status": "skipped", "season": season_id}
 
         enabled_groups = {group["name"]: group for group in self.config["community"].get("enabledGroups", [])}
@@ -100,8 +100,8 @@ class MatchingService:
         unmatched = self._unmatched_users(season_id, considered)
         if unmatched:
             logger.warning(
-                "Season %s: %d users unmatched (gender constraints / odd count): %s",
-                season_id, len(unmatched), [u.email for u in unmatched],
+                f"Season {season_id}: {len(unmatched)} users unmatched "
+                f"(gender constraints / odd count): {[u.email for u in unmatched]}"
             )
 
         proposals_sent = self._send_proposals(season_id)
@@ -144,7 +144,7 @@ class MatchingService:
                 unmatched=", ".join(u.email or u.id for u in unmatched)[:2000],
             ))
         except Exception as exc:
-            logger.error("Failed to record match run: %s", exc)
+            logger.error(f"Failed to record match run: {exc}")
 
     @staticmethod
     def _is_active(user, today):
@@ -228,11 +228,11 @@ class MatchingService:
             user1 = self.user_repo.get_by_id(meet.uid1)
             user2 = self.user_repo.get_by_id(meet.uid2)
         except UserNotFoundError as exc:
-            logger.error("Match %s skipped because user not found: %s", meet.id, exc)
+            logger.error(f"Match {meet.id} skipped because user not found: {exc}")
             return False
 
         if not user1.email or not user2.email:
-            logger.warning("Match %s missing email, skipping notification", meet.id)
+            logger.warning(f"Match {meet.id} missing email, skipping notification")
             return False
 
         if not self.response_secret:
@@ -267,10 +267,10 @@ class MatchingService:
 
         try:
             self.email_client.send(to_address=user.email, subject=subject, body=body, html=html)
-            logger.info("Sent match proposal to %s for meet %s", user.email, meet.id)
+            logger.info(f"Sent match proposal to {user.email} for meet {meet.id}")
             return True
         except Exception as exc:
-            logger.error("Failed to send email to %s for meet %s: %s", user.email, meet.id, exc)
+            logger.error(f"Failed to send email to {user.email} for meet {meet.id}: {exc}")
             return False
 
 
