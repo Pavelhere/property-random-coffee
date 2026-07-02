@@ -1,5 +1,8 @@
 community:
   displayName: "Preston Ridge"
+  # IANA timezone of the property. Weekly matching windows are computed in this
+  # timezone, never in server-local time.
+  timezone: "America/Chicago"
   groups:
     coffee:
       displayName: "Coffee chat"
@@ -12,14 +15,20 @@ community:
       enabled: true
 app:
   baseUrl: "http://localhost:5000"
-  adminToken: "change-this-secret"
-  responseSecret: "change-this-secret-too"
+  # Secrets are NOT stored in this file. Set them via environment variables:
+  #   ADMIN_TOKEN      — admin panel + cron auth
+  #   RESPONSE_SECRET  — signs accept/decline/preferences/edit links
+  # Rotating RESPONSE_SECRET invalidates all previously sent signed links.
+  adminToken: ""
+  responseSecret: ""
 database:
   host: 127.0.0.1
   port: 3308
   db: coffee
   username: root
+  # password via DATABASE_PASSWORD / MYSQLPASSWORD env var
 email:
+  # Prefer Resend: set RESEND_API_KEY env var (SMTP below is the fallback path).
   smtp:
     host: "smtp.example.com"
     port: 587
@@ -28,14 +37,15 @@ email:
     use_tls: true
   fromAddress: "coffee@mail.stratora.one"
   replyTo: "coffee@mail.stratora.one"
-daemons:
-  week:
-    poolPeriod: 3600
 notifications:
-  dryRun: false
+  # Safe default: emails are logged, not sent. Flip to false only in the
+  # deployed environment (or set NOTIFICATIONS_DRY_RUN=false).
+  dryRun: true
 devMode:
-  enabled: true
-  weekday: 5
-  hour: 20
+  # When enabled, pins the "current" weekday/hour for local testing.
+  # MUST be false in any deployed environment or weekly matching never fires.
+  enabled: false
+  weekday: 1
+  hour: 9
 log:
   rotation: "1 week"

@@ -1,0 +1,16 @@
+-- BASELINE (reference only, do not apply)
+-- Schema as of 2026-07-02, before the launch-readiness pass.
+-- Live tables: user, meet, meta, match_response
+-- (rating / notification tables may exist from the Slack era; unused.)
+
+-- user:            id VARCHAR(128) PK, username VARCHAR(92), email VARCHAR(128) UNIQUE,
+--                  full_name VARCHAR(128), pause_in_weeks VARCHAR(10), loc VARCHAR(24),
+--                  meet_group VARCHAR(24), bio VARCHAR(250), extra_info VARCHAR(500),
+--                  gender_pref VARCHAR(10), tmst_created, tmst_updated
+-- meet:            id INT PK AI, season VARCHAR(24), uid1/uid2 VARCHAR(128) FK->user.id,
+--                  completed BOOL, status VARCHAR(24), proposal_sent BOOL,
+--                  tmst_created, tmst_updated
+-- meta:            id INT PK AI, name VARCHAR(48), value VARCHAR(92),
+--                  tmst_created, tmst_updated
+-- match_response:  id INT PK AI, meet_id INT FK->meet.id, uid VARCHAR(128),
+--                  action VARCHAR(32), tmst_created, tmst_updated

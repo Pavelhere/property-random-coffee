@@ -32,14 +32,21 @@ docker start rcb-mysql-dev   # or: docker run -d --name rcb-mysql-dev \
   #   -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=coffee -p 3308:3306 mysql:8.0
 
 # deps live in a uv venv (.venv); mysqlclient needs mysql-client + pkg-config + zstd via brew
-DATABASE_PASSWORD=root PYTHONPATH=src FLASK_APP=src/main.py .venv/bin/flask run --port 5000
+# Secrets come from env, never from config.yml:
+DATABASE_PASSWORD=root ADMIN_TOKEN=dev-admin RESPONSE_SECRET=dev-secret \
+  PYTHONPATH=src FLASK_APP=src/main.py .venv/bin/flask run --port 5000
 ```
 
-App: http://127.0.0.1:5000 — admin: http://127.0.0.1:5000/admin?token=change-this-secret
+App: http://127.0.0.1:5000 — admin: http://127.0.0.1:5000/admin?token=dev-admin
 (Use `127.0.0.1`, not `localhost`.)
 
-Schema note: SQLAlchemy `create_all()` does NOT alter existing tables. When adding a
-column to `src/models/user.py`, also `ALTER TABLE user ADD COLUMN ...` on the live DB.
+Email is dry-run by default (`notifications.dryRun: true` — emails are logged, not
+sent). Real sending only in the deployed env via `NOTIFICATIONS_DRY_RUN=false` +
+`RESEND_API_KEY`.
+
+Schema note: SQLAlchemy `create_all()` does NOT alter existing tables. Every change
+to an existing table ships as a numbered file in `migrations/` (see its README) and
+is applied manually to the live DB.
 
 ## Sessions
 

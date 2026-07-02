@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 
 import os
-import time
 import yaml
 
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+DEFAULT_TIMEZONE = "America/Chicago"
 
 
 def _env_override(env_name, default=None):
@@ -12,6 +14,13 @@ def _env_override(env_name, default=None):
     if value is not None:
         return value
     return default
+
+
+def _env_bool(env_name, default):
+    value = os.environ.get(env_name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
 
 def load(yaml_path):
@@ -33,7 +42,10 @@ def load(yaml_path):
     config["app"]["baseUrl"] = _env_override("APP_BASE_URL", config["app"].get("baseUrl", "http://localhost:5000"))
     config["app"]["adminToken"] = _env_override("ADMIN_TOKEN", config["app"].get("adminToken", ""))
     config["app"]["responseSecret"] = _env_override("RESPONSE_SECRET", config["app"].get("responseSecret", ""))
-    config["app"]["responseSecret"] = _env_override("RESPONSE_SECRET", config["app"].get("responseSecret", ""))
+
+    config["community"]["timezone"] = _env_override(
+        "COMMUNITY_TIMEZONE", config["community"].get("timezone", DEFAULT_TIMEZONE)
+    )
 
     email_config = config["email"]
     email_config.setdefault("smtp", {})
@@ -60,15 +72,21 @@ def load(yaml_path):
     config["community"]["enabledGroups"] = [group for group in community_groups if group["enabled"]]
     config["community"]["allGroups"] = community_groups
 
-    config.setdefault("generated", {})
-    config["generated"]["groups"] = community_groups
-
     config.setdefault("notifications", {})
+    # Safe default: dry-run unless explicitly disabled (file or env).
+    config["notifications"]["dryRun"] = _env_bool(
+        "NOTIFICATIONS_DRY_RUN", config["notifications"].get("dryRun", True)
+    )
     config.setdefault("devMode", {"enabled": False, "weekday": 1, "hour": 0})
-    config.setdefault("daemons", {"week": {"poolPeriod": 3600}})
     config.setdefault("log", {"rotation": "1 week"})
 
     return config
+
+
+def community_now(config):
+    """Current datetime in the property's timezone (never server-local)."""
+    tz = ZoneInfo(config["community"].get("timezone", DEFAULT_TIMEZONE))
+    return datetime.now(tz)
 
 
 def get_week_info(config):
@@ -76,7 +94,8 @@ def get_week_info(config):
         weekday = int(config["devMode"]["weekday"])
         hour = int(config["devMode"]["hour"])
     else:
-        weekday = date.today().weekday() + 1
-        hour = int(time.strftime("%H"))
+        now = community_now(config)
+        weekday = now.weekday() + 1
+        hour = now.hour
 
     return weekday, hour

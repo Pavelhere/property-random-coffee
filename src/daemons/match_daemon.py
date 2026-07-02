@@ -10,7 +10,7 @@ from services.matching import MatchingService
 
 def care(config, user_repo, meet_repo, metadata_repo, email_client):
     matcher = MatchingService(config, user_repo, meet_repo, metadata_repo, email_client)
-    pool_period = config["daemons"]["week"]["poolPeriod"]
+    pool_period = config.get("daemons", {}).get("week", {}).get("poolPeriod", 3600)
 
     while True:
         weekday, _ = cfg_utils.get_week_info(config)
