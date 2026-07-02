@@ -55,14 +55,17 @@ class MatchingService:
         today = now.date()
         users = [u for u in self.user_repo.list() if self._is_active(u, today)]
 
+        # Pair within (complex, activity): residents of different complexes
+        # must never be introduced to each other — separate properties,
+        # separate management groups, separate data.
         grouped_users = {}
         for user in users:
             if user.meet_group not in enabled_groups:
                 continue
-            grouped_users.setdefault(user.meet_group, []).append(user)
+            grouped_users.setdefault((user.loc, user.meet_group), []).append(user)
 
         considered = []
-        for group_name, members in grouped_users.items():
+        for (loc, group_name), members in grouped_users.items():
             group_definition = enabled_groups[group_name]
             additional = group_definition.get("additionalUsers", [])
             self.meet_repo.create(

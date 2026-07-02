@@ -2,6 +2,7 @@
 
 import hmac
 import os
+import re
 import time
 import uuid
 import csv
@@ -36,6 +37,16 @@ app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'sta
 app.config["ADMIN_TOKEN"] = config["app"].get("adminToken")
 
 LIFE_CONTEXT_OPTIONS = ["New here", "Works from home", "Has kids", "Pet owner"]
+
+# Complex (property) id from the signup link: /?p=preston-ridge
+# Every complex gets its own QR/link; residents never pick or see it.
+_COMPLEX_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
+DEFAULT_COMPLEX = "community"
+
+
+def _complex_slug(value):
+    v = (value or "").strip().lower()
+    return v if _COMPLEX_RE.match(v) else DEFAULT_COMPLEX
 
 HOME_TEMPLATE = """<!doctype html>
 <html lang="en">
@@ -383,6 +394,7 @@ footer{max-width:72rem;margin:0 auto;padding:0 1.25rem 2.5rem;display:flex;flex-
               </label>
 
               <input type="hidden" name="cadence" value="0">
+              <input type="hidden" name="property" value="{{ property_id }}">
               <button type="submit" class="btn-primary" id="submit-btn">
                 Join the next Monday match
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -814,6 +826,7 @@ tr:hover td{background:#fafbfa}
           <tr>
             <th>Name</th>
             <th>Email</th>
+            <th>Complex</th>
             <th>Activity</th>
             <th>Gender</th>
             <th>Bio</th>
@@ -827,6 +840,7 @@ tr:hover td{background:#fafbfa}
           <tr>
             <td style="font-weight:600">{{ u.full_name or u.username }}</td>
             <td style="color:#5e6459" class="truncate">{{ u.email }}</td>
+            <td style="color:#5e6459">{{ u.loc }}</td>
             <td><span class="badge">{{ activity_labels.get(u.meet_group, u.meet_group) }}</span></td>
             <td style="color:#5e6459">{{ u.gender_pref or '—' }}</td>
             <td style="color:#5e6459;max-width:12rem" class="truncate">{{ u.bio or '—' }}</td>
@@ -871,6 +885,7 @@ def _serialize_match(meet):
         "season": meet.season,
         "status": meet.status,
         "proposal_sent": meet.proposal_sent,
+        "loc": user1.loc,
         "uid1": user1.id,
         "email1": user1.email,
         "name1": user1.full_name or user1.username,
@@ -925,6 +940,7 @@ def home():
         groups=groups,
         community_name=community_name,
         life_context_options=LIFE_CONTEXT_OPTIONS,
+        property_id=_complex_slug(request.args.get("p")),
         error=None,
     )
 
@@ -939,6 +955,7 @@ def join():
     full_name = (payload.get("full_name") or "").strip()
     meet_group = (payload.get("meet_group") or "").strip()
     bio = (payload.get("bio") or "").strip()[:250]
+    loc = _complex_slug(payload.get("property"))
     gender = (payload.get("gender") or "unspecified").strip()
     gender_pref = (payload.get("gender_pref") or "any").strip()
     cadence = (payload.get("cadence") or "0").strip()
@@ -965,7 +982,8 @@ def join():
         community_name = config["community"].get("displayName", "Community")
         return render_template_string(
             HOME_TEMPLATE, groups=groups, community_name=community_name,
-            life_context_options=LIFE_CONTEXT_OPTIONS, error=msg,
+            life_context_options=LIFE_CONTEXT_OPTIONS,
+            property_id=_complex_slug(payload.get("property")), error=msg,
         ), 400
 
     if not email or not full_name or not meet_group or not bio:
@@ -1019,7 +1037,7 @@ def join():
             username=full_name,
             email=email,
             full_name=full_name,
-            loc="community",
+            loc=loc,
             meet_group=meet_group,
             pause_in_weeks=cadence,
             bio=bio,
