@@ -11,7 +11,10 @@ class Metadata(Base):
     __tablename__ = common.DB_TABLES.meta
 
     id = Column(Integer, primary_key=True, unique=True, nullable=False, autoincrement=True)
-    name = Column(String(48), unique=False, nullable=False)
+    # Unique: MATCH_RUN_{season} rows act as an atomic claim — inserting the
+    # row IS the lock that makes weekly matching safe against double-cron.
+    # (migrations/001_meta_name_unique.sql applies this to the live DB)
+    name = Column(String(48), unique=True, nullable=False)
     value = Column(String(92), unique=False, nullable=False)
 
     tmst_created = Column(DateTime(timezone=True), server_default=func.now())

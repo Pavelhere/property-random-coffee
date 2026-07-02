@@ -3,7 +3,9 @@
 import hashlib
 import hmac
 from urllib.parse import urlencode
+
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 
 from utils import emails, season
 from models.metadata import Metadata
@@ -11,7 +13,16 @@ from db.exceptions import MetadataNotFoundError, UserNotFoundError
 
 
 class MatchingService:
-    METADATA_KEY = "LAST_MATCH_SEASON"
+    """Weekly matching pipeline (triggered by cron via POST /admin/matches).
+
+        cron fires ──► claim run row ──► group active users ──► pair within
+        (Mon, prop TZ)  (atomic, unique   by activity          group, avoid
+                         MATCH_RUN_{wk})                        repeats
+                              │                                    │
+                          already ran?                        send proposal
+                          → skipped                           emails (signed
+                                                              accept/decline)
+    """
 
     def __init__(self, config, user_repo, meet_repo, metadata_repo, email_client):
         self.config = config
@@ -30,7 +41,11 @@ class MatchingService:
     def generate_matches(self, *, force=False):
         season_id = season.get()
 
-        if not force and not self._should_generate(season_id):
+        # Atomic claim: inserting the unique MATCH_RUN row either succeeds
+        # (we own this week's run) or hits the unique index (someone already
+        # ran it). Check-then-act is not enough — double-cron, retries, or
+        # two gunicorn workers would race it.
+        if not self._claim_run(season_id) and not force:
             logger.info("Skipping match generation for season %s (already processed)", season_id)
             return {"status": "skipped", "season": season_id}
 
@@ -52,7 +67,7 @@ class MatchingService:
             )
 
         proposals_sent = self._send_proposals(season_id)
-        self._mark_season(season_id)
+        self._mark_run_done(season_id)
 
         return {
             "status": "ok",
@@ -60,20 +75,26 @@ class MatchingService:
             "proposals_sent": proposals_sent
         }
 
-    def _should_generate(self, season_id):
-        try:
-            metadata = self.metadata_repo.get({"name": self.METADATA_KEY})
-            return metadata.value != season_id
-        except MetadataNotFoundError:
-            return True
+    @staticmethod
+    def _run_key(season_id):
+        return f"MATCH_RUN_{season_id}"
 
-    def _mark_season(self, season_id):
+    def _claim_run(self, season_id):
+        """True if this call claimed the week's run; False if already claimed."""
         try:
-            metadata = self.metadata_repo.get({"name": self.METADATA_KEY})
-            metadata.value = season_id
-            self.metadata_repo.update(metadata)
+            self.metadata_repo.add(Metadata(name=self._run_key(season_id), value="running"))
+            return True
+        except IntegrityError:
+            return False
+
+    def _mark_run_done(self, season_id):
+        try:
+            row = self.metadata_repo.get({"name": self._run_key(season_id)})
+            row.value = "done"
+            self.metadata_repo.update(row)
         except MetadataNotFoundError:
-            self.metadata_repo.add(Metadata(name=self.METADATA_KEY, value=season_id))
+            # force=True can run without a claim row; nothing to mark
+            pass
 
     def _send_proposals(self, season_id):
         matches = self.meet_repo.list(spec={"season": season_id, "proposal_sent": False})

@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 
+import hmac
 import os
 import uuid
 import csv
 import io
-from multiprocessing import Process
 
 from flask import Flask, request, jsonify, Response, render_template_string
 from loguru import logger
@@ -17,7 +17,6 @@ from db import utils as db_utils
 from utils.emailer import EmailClient
 from services.matching import MatchingService
 from services.responses import ResponseService
-from daemons import match_daemon
 from models.user import User
 from constants.common import ACTIVITY_LABELS
 from db.exceptions import UserNotFoundError
@@ -870,13 +869,21 @@ def _serialize_match(meet):
 
 
 def _check_admin():
+    """Admin auth for the panel AND the weekly cron (POST /admin/matches).
+
+    Accepts `Authorization: Bearer <token>` (preferred — used by the cron)
+    or `?token=` (browser convenience). Constant-time compare so the token
+    can't be guessed byte-by-byte from response timing.
+    """
     token = request.headers.get("Authorization", "")
     if token.startswith("Bearer "):
         token = token.split(" ", 1)[1]
     if not token:
         token = request.args.get("token", "")
     admin_token = app.config.get("ADMIN_TOKEN")
-    return bool(admin_token and token == admin_token)
+    if not admin_token or not token:
+        return False
+    return hmac.compare_digest(token, admin_token)
 
 
 @app.route("/", methods=["GET"])
@@ -1258,16 +1265,6 @@ def respond_act():
     return _status_page(meet, uid, action)
 
 
-def _run_match_daemon():
-    match_process = Process(
-        target=match_daemon.care,
-        args=(config, user_repo, meet_repo, metadata_repo, email_client),
-        daemon=True
-    )
-    match_process.start()
-    return match_process
-
-
 if __name__ == "__main__":
     log_dir = os.getenv("RCB_LOG_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../logs")))
     os.makedirs(log_dir, exist_ok=True)
@@ -1281,5 +1278,4 @@ if __name__ == "__main__":
     if not config["app"].get("adminToken"):
         logger.warning("adminToken is not configured; admin routes will be disabled")
 
-    _run_match_daemon()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
