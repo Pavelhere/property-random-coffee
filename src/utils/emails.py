@@ -16,6 +16,22 @@ from markupsafe import escape
 from constants.common import ACTIVITY_LABELS
 
 
+def _footer_html(prefs_url):
+    if not prefs_url:
+        return ""
+    return (
+        f'<p style="font-size:12px;color:#aaa;margin-top:24px">'
+        f'You control these emails — <a href="{escape(prefs_url)}" style="color:#888">'
+        f'pause or unsubscribe anytime</a>.</p>'
+    )
+
+
+def _footer_plain(prefs_url):
+    if not prefs_url:
+        return ""
+    return f"\n\nPause or unsubscribe anytime: {prefs_url}"
+
+
 def _tags_html(extra_info, bg="#f0ebe3", color="#1a1a1a"):
     """Comma-joined life-context string → escaped pill spans (max 4)."""
     if not extra_info:
@@ -30,7 +46,7 @@ def _tags_html(extra_info, bg="#f0ebe3", color="#1a1a1a"):
     )
 
 
-def confirmation_email(name, community_name):
+def confirmation_email(name, community_name, prefs_url=None):
     """Sent immediately after signup."""
     subject = f"You're in — {community_name}"
     body = (
@@ -39,6 +55,7 @@ def confirmation_email(name, community_name):
         "Every Monday you'll get a personal intro to one neighbor — their name, "
         "a short bio, and a suggested way to meet. One tap to accept.\n\n"
         f"— The {community_name} team"
+        + _footer_plain(prefs_url)
     )
     html = f"""
 <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1a1a1a">
@@ -56,13 +73,15 @@ def confirmation_email(name, community_name):
   <p style="font-size:14px;color:#888;margin-top:32px">
     — Community Coffee
   </p>
+  {_footer_html(prefs_url)}
 </div>
 """
     return subject, body, html
 
 
 def match_proposal_email(*, recipient_name, peer_name, peer_bio, peer_activity,
-                         peer_extra, accept_url, decline_url, community_name):
+                         peer_extra, accept_url, decline_url, community_name,
+                         prefs_url=None):
     """Weekly match intro with Accept / Decline links."""
     activity_label = ACTIVITY_LABELS.get(peer_activity, peer_activity or "meetup")
 
@@ -81,6 +100,7 @@ def match_proposal_email(*, recipient_name, peer_name, peer_bio, peer_activity,
         f"Accept: {accept_url}\n"
         f"Decline: {decline_url}\n\n"
         f"— Community Coffee"
+        + _footer_plain(prefs_url)
     )
 
     tags = _tags_html(peer_extra)
@@ -123,6 +143,7 @@ def match_proposal_email(*, recipient_name, peer_name, peer_bio, peer_activity,
     </a>
   </div>
   <p style="font-size:13px;color:#aaa">— Community Coffee</p>
+  {_footer_html(prefs_url)}
 </div>
 """
     return subject, body, html
@@ -152,7 +173,7 @@ def _person_block(name, email, bio, extra_info):
 </div>"""
 
 
-def connection_email(*, user1, user2, community_name):
+def connection_email(*, user1, user2, community_name, prefs_url=None):
     """Both said yes: mutual intro with contact details (send to user1, CC user2)."""
     name1 = user1.full_name or user1.username
     name2 = user2.full_name or user2.username
@@ -199,7 +220,7 @@ def connection_email(*, user1, user2, community_name):
 
     </td></tr>
     <tr><td style="padding-top:24px;text-align:center;font-size:12px;color:#8a9386">
-      — Community Coffee
+      — Community Coffee{(' · <a href="' + str(escape(prefs_url)) + '" style="color:#8a9386">pause or unsubscribe</a>') if prefs_url else ''}
     </td></tr>
   </table>
 </div>"""
@@ -211,5 +232,6 @@ def connection_email(*, user1, user2, community_name):
         f"{name2}: {user2.email}\n\n"
         f"Hit Reply All to say hello and set up your {activity.lower()}.\n\n"
         f"— Community Coffee"
+        + _footer_plain(prefs_url)
     )
     return subject, plain, html

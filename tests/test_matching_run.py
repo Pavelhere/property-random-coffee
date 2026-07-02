@@ -78,9 +78,10 @@ def test_force_reruns_but_never_duplicates_emails(client, app_main, sent_emails,
 
 
 def test_paused_users_excluded(client, app_main, sent_emails, admin_token):
+    from datetime import date, timedelta
     _signup(app_main, "Jane", "jane@example.com")
     paused = _signup(app_main, "Sam", "sam@example.com")
-    paused.pause_in_weeks = "2"
+    paused.paused_until = date.today() + timedelta(weeks=2)
     app_main.user_repo.update(paused)
 
     res = _run(client, admin_token)

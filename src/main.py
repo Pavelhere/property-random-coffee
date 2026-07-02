@@ -5,6 +5,7 @@ import os
 import uuid
 import csv
 import io
+from datetime import timedelta
 
 from flask import Flask, request, jsonify, Response, render_template_string
 from loguru import logger
@@ -13,6 +14,7 @@ from markupsafe import escape
 
 from utils import config as cfg_utils
 from utils import emails
+from utils import links
 from db import utils as db_utils
 from utils.emailer import EmailClient
 from services.matching import MatchingService
@@ -763,8 +765,8 @@ tr:hover td{background:#fafbfa}
       <div class="metric-value">{{ users|length }}</div>
     </div>
     <div class="metric-card">
-      <div class="metric-label">Active (weekly)</div>
-      <div class="metric-value">{{ users|selectattr('pause_in_weeks','eq','0')|list|length }}</div>
+      <div class="metric-label">Active (matchable)</div>
+      <div class="metric-value">{{ active_count }}</div>
     </div>
     <div class="metric-card">
       <div class="metric-label">Community</div>
@@ -815,7 +817,7 @@ tr:hover td{background:#fafbfa}
             <th>Gender</th>
             <th>Bio</th>
             <th>Life context</th>
-            <th>Cadence</th>
+            <th>Status</th>
             <th>Joined</th>
           </tr>
         </thead>
@@ -828,7 +830,7 @@ tr:hover td{background:#fafbfa}
             <td style="color:#5e6459">{{ u.gender_pref or '—' }}</td>
             <td style="color:#5e6459;max-width:12rem" class="truncate">{{ u.bio or '—' }}</td>
             <td style="color:#5e6459">{{ u.extra_info or '—' }}</td>
-            <td><span class="badge" style="background:{% if u.pause_in_weeks == '0' %}#edf5f0{% else %}#fdf6ed{% endif %};color:{% if u.pause_in_weeks == '0' %}#143c32{% else %}#b7590a{% endif %}">{{ 'Weekly' if u.pause_in_weeks == '0' else 'Paused ' + u.pause_in_weeks + 'w' }}</span></td>
+            <td><span class="badge" style="background:{% if user_status[u.id] == 'Weekly' %}#edf5f0{% elif user_status[u.id] == 'Unsubscribed' %}#fdf0ef{% else %}#fdf6ed{% endif %};color:{% if user_status[u.id] == 'Weekly' %}#143c32{% elif user_status[u.id] == 'Unsubscribed' %}#c0392b{% else %}#b7590a{% endif %}">{{ user_status[u.id] }}</span></td>
             <td style="color:#5e6459;white-space:nowrap">{{ u.tmst_created.strftime('%b %d, %Y') if u.tmst_created else '—' }}</td>
           </tr>
           {% endfor %}
@@ -995,7 +997,9 @@ def join():
     # Send confirmation email
     community_name = config["community"].get("displayName", "Community")
     try:
-        subject, body, html = emails.confirmation_email(full_name, community_name)
+        prefs_url = links.preferences_url(
+            config["app"]["baseUrl"], config["app"]["responseSecret"], user.id)
+        subject, body, html = emails.confirmation_email(full_name, community_name, prefs_url)
         email_client.send(to_address=email, subject=subject, body=body, html=html)
     except Exception as exc:
         logger.error("Failed to send confirmation email to %s: %s", email, exc)
@@ -1006,6 +1010,14 @@ def join():
     return render_template_string(THANK_YOU_TEMPLATE, community_name=community_name)
 
 
+def _user_status(user, today):
+    if user.unsubscribed:
+        return "Unsubscribed"
+    if user.paused_until and user.paused_until > today:
+        return f"Paused until {user.paused_until.strftime('%b %d')}"
+    return "Weekly"
+
+
 @app.route("/admin", methods=["GET"])
 def admin_panel():
     if not _check_admin():
@@ -1013,6 +1025,9 @@ def admin_panel():
     token = request.args.get("token", "")
     message = request.args.get("message", "")
     users = list(user_repo.list())
+    today = cfg_utils.community_now(config).date()
+    user_status = {u.id: _user_status(u, today) for u in users}
+    active_count = sum(1 for s in user_status.values() if s == "Weekly")
     community_name = config["community"].get("displayName", "Community")
     return render_template_string(
         ADMIN_TEMPLATE,
@@ -1021,6 +1036,8 @@ def admin_panel():
         message=message,
         activity_labels=ACTIVITY_LABELS,
         community_name=community_name,
+        user_status=user_status,
+        active_count=active_count,
     )
 
 
@@ -1204,6 +1221,120 @@ def _status_page(meet, uid, action):
         message="We\'ll pair you with someone new next Monday.",
         icon="—", icon_bg="#edf5f0", icon_color="#143c32",
     )
+
+
+PAUSE_CHOICES = {"pause_1": 1, "pause_2": 2, "pause_3": 3, "pause_4": 4}
+
+
+def _prefs_check(values):
+    """Validate a signed /preferences token. Returns (user, error_response)."""
+    uid = values.get("uid", "")
+    exp = values.get("exp", "")
+    signature = values.get("signature", "")
+    secret = config["app"]["responseSecret"]
+    if not links.verify(secret, "prefs", uid, exp, signature):
+        return None, Response("Invalid or expired link", status=400)
+    try:
+        user = user_repo.get_by_id(uid)
+    except UserNotFoundError:
+        return None, Response("Invalid or expired link", status=400)
+    return user, None
+
+
+def _prefs_forms(uid, exp, signature):
+    def _form(action, label, style):
+        return f"""
+        <form method="post" action="/preferences" style="display:inline-block;margin:4px">
+          <input type="hidden" name="uid" value="{escape(uid)}">
+          <input type="hidden" name="exp" value="{escape(exp)}">
+          <input type="hidden" name="signature" value="{escape(signature)}">
+          <input type="hidden" name="action" value="{action}">
+          <button type="submit" style="{style}">{label}</button>
+        </form>"""
+
+    pill = ("background:#f0ebe3;color:#555;border:none;border-radius:100px;"
+            "padding:0.7rem 1.2rem;font-size:14px;cursor:pointer")
+    danger = ("background:#fff;color:#c0392b;border:1px solid rgba(192,57,43,0.4);"
+              "border-radius:100px;padding:0.7rem 1.2rem;font-size:14px;cursor:pointer")
+    green = ("background:#143c32;color:#f5ede3;border:none;border-radius:100px;"
+             "padding:0.7rem 1.2rem;font-size:14px;font-weight:600;cursor:pointer")
+
+    pause_forms = "".join(
+        _form(action, f"Pause {weeks}w", pill) for action, weeks in PAUSE_CHOICES.items()
+    )
+    return f"""
+        <div style="margin-top:1.25rem">
+          <p style="font-size:13px;color:#5a6356;margin:0 0 6px">Take a break from Monday matches:</p>
+          {pause_forms}
+        </div>
+        <div style="margin-top:1.25rem">
+          {_form("resume", "Resume weekly matches", green)}
+        </div>
+        <div style="margin-top:1.25rem;border-top:1px solid #eee;padding-top:1rem">
+          {_form("unsubscribe", "Unsubscribe from all emails", danger)}
+        </div>"""
+
+
+def _prefs_status_line(user, today):
+    if user.unsubscribed:
+        return "You're unsubscribed — no matches, no emails."
+    if user.paused_until and user.paused_until > today:
+        return f"Paused until {user.paused_until.strftime('%b %d, %Y')}."
+    return "You're in the weekly Monday matches."
+
+
+@app.route("/preferences", methods=["GET"])
+def preferences_page():
+    """Signed self-service page: pause 1-4 weeks, resume, or unsubscribe.
+    GET is read-only (scanner-safe); changes happen via the POST forms."""
+    user, error = _prefs_check(request.args)
+    if error:
+        return error
+    today = cfg_utils.community_now(config).date()
+    extra = _prefs_forms(request.args["uid"], request.args["exp"], request.args["signature"])
+    return _respond_page(
+        headline="Your match preferences",
+        message=_prefs_status_line(user, today),
+        icon="⚙", icon_bg="#edf5f0", icon_color="#143c32",
+        extra=extra,
+    )
+
+
+@app.route("/preferences", methods=["POST"])
+def preferences_act():
+    user, error = _prefs_check(request.form)
+    if error:
+        return error
+
+    action = request.form.get("action", "")
+    today = cfg_utils.community_now(config).date()
+
+    if action in PAUSE_CHOICES:
+        weeks = PAUSE_CHOICES[action]
+        user.paused_until = today + timedelta(weeks=weeks)
+        user.unsubscribed = False
+        user_repo.update(user)
+        headline = "Paused."
+        message = (f"No matches until {user.paused_until.strftime('%b %d, %Y')}. "
+                   "We'll include you again automatically after that.")
+    elif action == "unsubscribe":
+        user.unsubscribed = True
+        user.paused_until = None
+        user_repo.update(user)
+        headline = "You're unsubscribed."
+        message = "No more matches or emails. You can re-join anytime from the signup page."
+    elif action == "resume":
+        user.unsubscribed = False
+        user.paused_until = None
+        user_repo.update(user)
+        headline = "Welcome back!"
+        message = "You're in the next Monday match."
+    else:
+        return Response("Unknown action", status=400)
+
+    logger.info("Preferences change for %s: %s", user.id, action)
+    return _respond_page(headline=headline, message=message,
+                         icon="✓", icon_bg="#143c32", icon_color="#f5ede3")
 
 
 @app.route("/respond", methods=["GET"])

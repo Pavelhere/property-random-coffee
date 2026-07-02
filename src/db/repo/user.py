@@ -36,6 +36,8 @@ class UserRepository:
                 full_name=user.full_name,
                 email=user.email,
                 pause_in_weeks=user.pause_in_weeks,
+                paused_until=user.paused_until,
+                unsubscribed=user.unsubscribed,
                 loc=user.loc,
                 meet_group=user.meet_group,
                 bio=user.bio,

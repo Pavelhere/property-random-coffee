@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Date, Boolean
 from sqlalchemy.sql import func
 
 from db.database import Base
@@ -14,7 +14,14 @@ class User(Base):
     username = Column(String(92), nullable=False, unique=False)
     email = Column(String(128), nullable=True, unique=True)
     full_name = Column(String(128), nullable=True, unique=False)
+    # RETIRED — kept for schema compat, no longer read (see paused_until).
     pause_in_weeks = Column(String(10), nullable=False, unique=False, default="0")
+    # Self-healing pause: matching skips anyone whose date is in the future.
+    # No decrement job — a missed cron week can't extend anyone's pause.
+    # (migrations/003_user_pause_unsubscribe.sql)
+    paused_until = Column(Date, nullable=True)
+    # Suppresses matching AND every email type until explicit re-join.
+    unsubscribed = Column(Boolean, nullable=False, default=False)
     loc = Column(String(24), nullable=False, unique=False, default="none")
     meet_group = Column(String(24), nullable=False, unique=False, default="remote")
     bio = Column(String(250), nullable=True)

@@ -7,7 +7,8 @@ from urllib.parse import urlencode
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
-from utils import emails, season
+from utils import config as cfg_utils
+from utils import emails, links, season
 from models.metadata import Metadata
 from db.exceptions import MetadataNotFoundError, UserNotFoundError
 
@@ -50,7 +51,8 @@ class MatchingService:
             return {"status": "skipped", "season": season_id}
 
         enabled_groups = {group["name"]: group for group in self.config["community"].get("enabledGroups", [])}
-        users = list(self.user_repo.list(spec={"pause_in_weeks": "0"}))
+        today = cfg_utils.community_now(self.config).date()
+        users = [u for u in self.user_repo.list() if self._is_active(u, today)]
 
         grouped_users = {}
         for user in users:
@@ -85,6 +87,15 @@ class MatchingService:
             "proposals_sent": proposals_sent,
             "unmatched": [u.email for u in unmatched],
         }
+
+    @staticmethod
+    def _is_active(user, today):
+        """Matchable = not unsubscribed and not paused into the future."""
+        if user.unsubscribed:
+            return False
+        if user.paused_until and user.paused_until > today:
+            return False
+        return True
 
     # gender_pref value → the gender the peer must have for it to be satisfied
     _GENDER_FOR_PREF = {"women": "woman", "men": "man"}
@@ -193,6 +204,7 @@ class MatchingService:
             accept_url=accept_url,
             decline_url=decline_url,
             community_name=community_name,
+            prefs_url=links.preferences_url(self.base_url, self.response_secret, user.id),
         )
 
         try:

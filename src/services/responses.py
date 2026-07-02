@@ -6,7 +6,7 @@ from loguru import logger
 
 from models.match_response import MatchResponse
 from db.exceptions import MeetNotFoundError, UserNotFoundError
-from utils import emails
+from utils import emails, links
 
 
 class ResponseService:
@@ -126,8 +126,15 @@ class ResponseService:
             logger.error("Cannot send connection email for meet %s: %s", meet.id, exc)
             return
 
+        # Unsubscribed mid-flow (accepted, then unsubscribed before the peer
+        # answered): honor it — no further email of any type.
+        if user1.unsubscribed or user2.unsubscribed:
+            logger.info("Meet %s connected but a participant unsubscribed — suppressing email", meet.id)
+            return
+
         subject, plain, html = emails.connection_email(
             user1=user1, user2=user2, community_name=self.community_name,
+            prefs_url=links.preferences_url(self.base_url, self.secret, user1.id),
         )
 
         try:
