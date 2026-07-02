@@ -12,17 +12,25 @@ The *why* behind every choice lives in **`docs/DECISIONS.md`** (append-only log)
 Before changing how something works, read the relevant entry. When we make a real
 decision, append a new entry and commit it (`docs: log decision — <title>`).
 
-## Current state (2026-06-01)
+## Current state (2026-07-02)
 
-MVP is built and runs locally. Single-page signup → confirmation email → weekly match
-email. Admin panel lists participants, triggers matching, exports CSV, and sends a
-sample test email.
+Launch-readiness pass complete (see DECISIONS.md 2026-07-02): signup → confirmation
+email → weekly match email → scanner-safe accept/decline confirm page → connection
+email. Gender preferences enforced in pairing; signed pause/unsubscribe and
+profile-edit links; per-complex scoping via `/?p=<complex>`; match-run audit trail +
+admin dry-run preview. 72 SQLite tests + 3 MySQL integration tests (`pytest`,
+`pytest -m mysql`).
+
+Matching is triggered by a platform cron POSTing `/admin/matches` (Bearer
+ADMIN_TOKEN) — there is NO in-process scheduler. See `docs/deployment/cron.md`.
 
 **Pending to launch:**
-1. Add Resend DNS records to stratora.one, then set SMTP creds in `resources/config.yml`
-   and flip `notifications.dryRun: false` (see DECISIONS.md 2026-06-01).
-2. Deploy (Dockerfile exists; Railway / Render / Fly.io are options).
-3. Wire the property id from the signup link param into `loc` (still defaults to "community").
+1. Add Resend DNS records to stratora.one, set `RESEND_API_KEY`, and set
+   `NOTIFICATIONS_DRY_RUN=false` in the deployed env (see DECISIONS.md 2026-06-01).
+2. Deploy (Dockerfile exists; Railway / Render / Fly.io are options) + configure the
+   Monday cron per `docs/deployment/cron.md`.
+3. Before the first real Monday: use the admin "Preview pairs (dry run)" button to
+   inspect pairs, then run for real.
 
 ## Run locally
 

@@ -137,3 +137,33 @@ The one live piece buried in week.py (pause aging) is being reimplemented proper
 a `paused_until` date in the launch-readiness pass (see eng review, 2026-07-01).
 **Result:** Repo now describes exactly one product. `db/utils.get_repos()` returns the
 four repos the app actually uses.
+
+## 2026-07-02 — Launch-readiness pass (eng review + Codex outside voice)
+
+**Context:** /plan-eng-review audit found the core promise silently broken: the match
+daemon never started under gunicorn AND committed devMode pinned the weekday, so a
+deployed app would never send Monday emails. Plus: GET links with side effects (mail
+scanners auto-accept/decline), stored XSS via bio, profile hijack via re-signup,
+gender preference collected but unenforced, pause/unsubscribe promised but absent,
+weekday-dependent season math, zero tests. Codex (outside voice) added: atomic run
+guard, timezone pinning, dry-run preview, `paused_until` over a decrement counter,
+rate limiting, MySQL-backed integration tests.
+**Decision:** Eleven-commit fix pass, every fix landing with tests (72 SQLite + 3
+MySQL): (1) cron-driven matching via POST /admin/matches with an atomic
+MATCH_RUN_{season} claim row — in-process daemon deleted; (2) /respond is GET-confirm
++ POST-act with an explicit meet state machine (connected/declined terminal, connection
+email fires exactly once); (3) all user content HTML-escaped, email templates
+consolidated in utils/emails.py; (4) gender collected ("I am…") and preferences
+enforced mutually in pairing, prefer-not-to-say pairs only with no-preference,
+constraint no-matches surfaced; (5) signed /preferences links — paused_until date +
+unsubscribed flag suppressing all email; (6) re-signup never overwrites — signed
+2-day /profile/edit links, neutral responses, /join throttled; (7) season ids %G%V
+weekday-independent, repeat-avoidance = never-met-before with fallback; (8) complex id
+from /?p= into loc, matching scoped per complex (tenant = complex, per Pavel);
+(9) match_run audit table + admin dry-run preview. Schema changes ship as
+migrations/00X.sql (applied to dev DB).
+**Why:** Each item traces to a review finding that would have surfaced at the Preston
+Ridge pilot as a broken promise, a trust incident, or a silent Monday. Full log in the
+eng-review session (2026-07-01/02).
+**Result:** All tests green; app boots against MySQL dev DB; dry-run preview verified
+against real data. Launch blockers remaining: Resend DNS + deploy + cron setup.

@@ -33,7 +33,7 @@ class MeetRepository:
         the admin preview so the founder can see Monday's pairs before any
         email exists.
         """
-        logger.info("Starting algorithm to create meets%s", " (dry run)" if dry_run else "")
+        logger.info(f"Starting algorithm to create meets{' (dry run)' if dry_run else ''}")
 
         if additional_uids is None:
             additional_uids = []
