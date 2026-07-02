@@ -1077,82 +1077,12 @@ def trigger_matches():
     return jsonify(result)
 
 
-@app.route("/respond", methods=["GET"])
-def respond():
-    meet_id = request.args.get("meet_id")
-    uid = request.args.get("uid")
-    action = request.args.get("action")
-    signature = request.args.get("signature")
-
-    if not all([meet_id, uid, action, signature]):
-        return Response("Missing required parameters", status=400)
-
-    try:
-        meet_id_int = int(meet_id)
-    except ValueError:
-        return Response("Invalid meet_id", status=400)
-
-    if not response_service.validate_signature(meet_id, uid, action, signature):
-        return Response("Invalid token", status=400)
-
-    try:
-        status = response_service.record_response(meet_id_int, uid, action)
-    except Exception as exc:
-        logger.error("Failed to store response: %s", exc)
-        return Response("Unable to record response", status=400)
-
-    # Get peer name for display (escaped — bio/name are user-supplied)
-    try:
-        meet = meet_repo.get_by_id(meet_id_int)
-        peer = response_service.get_peer(meet, uid)
-        peer_name = escape((peer.full_name or peer.username).split()[0]) if peer else "your neighbor"
-        peer_bio = escape(peer.bio) if peer and peer.bio else None
-        peer_avatar = escape(peer_name[0].upper()) if peer_name else "?"
-    except Exception:
-        peer_name = "your neighbor"
-        peer_bio = None
-        peer_avatar = "?"
-
-    community_name = config["community"].get("displayName", "Community Coffee")
-
-    if status == "connected":
-        headline = "You're both in! 🎉"
-        message = f"You and {peer_name} both said yes. Check your inbox — we just sent you a mutual introduction with each other's contact details."
-        icon = "✓"
-        icon_bg = "#143c32"
-        icon_color = "#f5ede3"
-        extra = f"""
-        <div style="background:#faf7f2;border:1px solid rgba(26,31,24,0.08);border-radius:16px;padding:18px 20px;margin:24px 0;text-align:left">
-          <div style="display:flex;align-items:center;gap:12px">
-            <div style="width:44px;height:44px;border-radius:50%;background:#143c32;color:#f5ede3;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0">{peer_avatar}</div>
-            <div>
-              <div style="font-weight:700;font-size:16px;color:#1a1f18">{peer_name}</div>
-              {'<div style="font-size:13px;color:#5a6356;font-style:italic;margin-top:2px">"' + peer_bio + '"</div>' if peer_bio else ''}
-            </div>
-          </div>
-        </div>
-        <p style="font-size:14px;color:#5a6356;text-align:center">Hit <strong>Reply All</strong> on the intro email to say hello.</p>"""
-    elif action == "accept":
-        headline = "You said yes!"
-        message = f"We'll let you know as soon as {peer_name} responds."
-        icon = "✓"
-        icon_bg = "#143c32"
-        icon_color = "#f5ede3"
-        extra = ""
-    else:
-        headline = "No problem."
-        message = "We'll pair you with someone new next Monday."
-        icon = "—"
-        icon_bg = "#edf5f0"
-        icon_color = "#143c32"
-        extra = ""
-
-    html = f"""<!doctype html>
+RESPOND_CARD = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{headline} — Community Coffee</title>
+<title>{title} — Community Coffee</title>
 </head>
 <body style="margin:0;padding:0;background:#f5ede3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem">
@@ -1168,7 +1098,164 @@ def respond():
 </body>
 </html>"""
 
+
+def _respond_page(*, headline, message, icon="✓", icon_bg="#143c32",
+                  icon_color="#f5ede3", extra=""):
+    community_name = config["community"].get("displayName", "Community Coffee")
+    html = RESPOND_CARD.format(
+        title=headline, headline=headline, message=message, icon=icon,
+        icon_bg=icon_bg, icon_color=icon_color, extra=extra,
+        community_name=escape(community_name),
+    )
     return Response(html, status=200, mimetype="text/html")
+
+
+def _peer_card(peer_avatar, peer_name, peer_bio):
+    bio_block = (
+        f'''<div style="font-size:13px;color:#5a6356;font-style:italic;margin-top:2px">"{peer_bio}"</div>'''
+        if peer_bio else ""
+    )
+    return f"""
+        <div style="background:#faf7f2;border:1px solid rgba(26,31,24,0.08);border-radius:16px;padding:18px 20px;margin:24px 0;text-align:left">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:44px;height:44px;border-radius:50%;background:#143c32;color:#f5ede3;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0">{peer_avatar}</div>
+            <div>
+              <div style="font-weight:700;font-size:16px;color:#1a1f18">{peer_name}</div>
+              {bio_block}
+            </div>
+          </div>
+        </div>"""
+
+
+def _parse_respond_request(values):
+    """Shared validation for GET (confirm) and POST (act). Returns
+    (meet_id_str, meet_id_int, uid, action, error_response)."""
+    meet_id = values.get("meet_id")
+    uid = values.get("uid")
+    action = values.get("action")
+    signature = values.get("signature")
+
+    if not all([meet_id, uid, action, signature]):
+        return None, None, None, None, Response("Missing required parameters", status=400)
+    try:
+        meet_id_int = int(meet_id)
+    except ValueError:
+        return None, None, None, None, Response("Invalid meet_id", status=400)
+    if not response_service.validate_signature(meet_id, uid, action, signature):
+        return None, None, None, None, Response("Invalid token", status=400)
+    return meet_id, meet_id_int, uid, action, None
+
+
+def _peer_display(meet, uid):
+    peer = response_service.get_peer(meet, uid)
+    peer_name = escape((peer.full_name or peer.username).split()[0]) if peer else "your neighbor"
+    peer_bio = escape(peer.bio) if peer and peer.bio else None
+    peer_avatar = escape(str(peer_name)[0].upper()) if peer else "?"
+    return peer_name, peer_bio, peer_avatar
+
+
+def _status_page(meet, uid, action):
+    """Result page for a meet in a known state (used by GET and POST)."""
+    peer_name, peer_bio, peer_avatar = _peer_display(meet, uid)
+
+    if meet.status == "connected":
+        extra = _peer_card(peer_avatar, peer_name, peer_bio) + \
+            '<p style="font-size:14px;color:#5a6356;text-align:center">Hit <strong>Reply All</strong> on the intro email to say hello.</p>'
+        return _respond_page(
+            headline="You\'re both in! 🎉",
+            message=f"You and {peer_name} both said yes. Check your inbox — we just sent you a mutual introduction with each other\'s contact details.",
+            extra=extra,
+        )
+    if meet.status == "declined":
+        return _respond_page(
+            headline="This match is closed.",
+            message="We\'ll pair you with someone new next Monday.",
+            icon="—", icon_bg="#edf5f0", icon_color="#143c32",
+        )
+    if action == "accept":
+        return _respond_page(
+            headline="You said yes!",
+            message=f"We\'ll let you know as soon as {peer_name} responds.",
+        )
+    return _respond_page(
+        headline="No problem.",
+        message="We\'ll pair you with someone new next Monday.",
+        icon="—", icon_bg="#edf5f0", icon_color="#143c32",
+    )
+
+
+@app.route("/respond", methods=["GET"])
+def respond_confirm():
+    """READ-ONLY confirmation page.
+
+    Email link scanners (Outlook SafeLinks etc.) prefetch GET links before
+    the resident ever sees the email — so GET must never change state. The
+    actual accept/decline happens via the POST forms rendered here.
+    """
+    meet_id, meet_id_int, uid, action, error = _parse_respond_request(request.args)
+    if error:
+        return error
+
+    try:
+        meet, my_action = response_service.get_response_state(meet_id_int, uid)
+    except Exception as exc:
+        logger.error("Failed to load respond state: %s", exc)
+        return Response("Unable to load this match", status=400)
+
+    # Meet already settled (or this resident already answered): show state.
+    if meet.status in ("connected", "declined"):
+        return _status_page(meet, uid, my_action or action)
+    if my_action is not None:
+        return _status_page(meet, uid, my_action)
+
+    peer_name, peer_bio, peer_avatar = _peer_display(meet, uid)
+    accept_sig = response_service.sign(meet_id, uid, "accept")
+    decline_sig = response_service.sign(meet_id, uid, "decline")
+
+    def _form(act, sig, label, style):
+        return f"""
+        <form method="post" action="/respond" style="display:inline-block;margin:6px">
+          <input type="hidden" name="meet_id" value="{meet_id_int}">
+          <input type="hidden" name="uid" value="{escape(uid)}">
+          <input type="hidden" name="action" value="{act}">
+          <input type="hidden" name="signature" value="{sig}">
+          <button type="submit" style="{style}">{label}</button>
+        </form>"""
+
+    accept_btn = _form(
+        "accept", accept_sig, "✓ Accept",
+        "background:#143c32;color:#f5ede3;border:none;border-radius:100px;padding:0.9rem 2rem;font-size:15px;font-weight:600;cursor:pointer",
+    )
+    decline_btn = _form(
+        "decline", decline_sig, "Decline",
+        "background:#f0ebe3;color:#555;border:none;border-radius:100px;padding:0.9rem 2rem;font-size:15px;cursor:pointer",
+    )
+    extra = _peer_card(peer_avatar, peer_name, peer_bio) + \
+        f'<div style="margin-top:1rem">{accept_btn}{decline_btn}</div>'
+
+    return _respond_page(
+        headline="Your neighbor match",
+        message="One tap to confirm — meet this neighbor this week?",
+        icon="☕", icon_bg="#edf5f0", icon_color="#143c32",
+        extra=extra,
+    )
+
+
+@app.route("/respond", methods=["POST"])
+def respond_act():
+    """Records the accept/decline. State changes live ONLY here (never GET)."""
+    meet_id, meet_id_int, uid, action, error = _parse_respond_request(request.form)
+    if error:
+        return error
+
+    try:
+        response_service.record_response(meet_id_int, uid, action)
+    except Exception as exc:
+        logger.error("Failed to store response: %s", exc)
+        return Response("Unable to record response", status=400)
+
+    meet = meet_repo.get_by_id(meet_id_int)
+    return _status_page(meet, uid, action)
 
 
 def _run_match_daemon():
