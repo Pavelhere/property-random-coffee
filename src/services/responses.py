@@ -6,12 +6,7 @@ from loguru import logger
 
 from models.match_response import MatchResponse
 from db.exceptions import MeetNotFoundError, UserNotFoundError
-
-ACTIVITY_LABELS = {
-    "coffee": "Coffee chat",
-    "walking": "Neighborhood walk",
-    "playdate": "Playdate with kids",
-}
+from utils import emails
 
 
 class ResponseService:
@@ -91,97 +86,8 @@ class ResponseService:
             logger.error("Cannot send connection email for meet %s: %s", meet.id, exc)
             return
 
-        name1 = user1.full_name or user1.username
-        name2 = user2.full_name or user2.username
-        activity = ACTIVITY_LABELS.get(user1.meet_group or user2.meet_group, "meetup")
-        community = self.community_name
-
-        subject = f"You're connected — {name1} meet {name2} 🎉"
-
-        def _tags_html(extra_info):
-            if not extra_info:
-                return ""
-            tags = [t.strip() for t in extra_info.split(",") if t.strip()]
-            if not tags:
-                return ""
-            return "".join(
-                f'<span style="display:inline-block;background:#edf5f0;color:#143c32;'
-                f'border-radius:100px;padding:3px 10px;font-size:12px;margin:2px 4px 2px 0">{t}</span>'
-                for t in tags[:4]
-            )
-
-        def _person_block(name, email, bio, extra_info):
-            avatar = name[0].upper() if name else "?"
-            tags = _tags_html(extra_info)
-            return f"""
-<div style="background:#faf7f2;border:1px solid rgba(26,31,24,0.08);border-radius:16px;padding:18px 20px;margin-bottom:16px">
-  <div style="display:flex;align-items:flex-start;gap:14px">
-    <div style="width:48px;height:48px;border-radius:50%;background:#143c32;color:#f5ede3;
-                font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;
-                flex-shrink:0;text-align:center;line-height:48px;min-width:48px">{avatar}</div>
-    <div style="flex:1;min-width:0">
-      <div style="font-size:17px;font-weight:700;color:#1a1f18;margin-bottom:4px">{name}</div>
-      {'<div style="font-size:14px;color:#5a6356;font-style:italic;margin-bottom:8px;line-height:1.5">"' + bio + '"</div>' if bio else ''}
-      {('<div style="margin-bottom:8px">' + tags + '</div>') if tags else ''}
-      <div style="font-size:13px;color:#143c32;font-weight:500">📧 {email}</div>
-    </div>
-  </div>
-</div>"""
-
-        html = f"""
-<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;background:#f5ede3;padding:40px 16px">
-  <table width="100%" cellpadding="0" cellspacing="0">
-    <tr><td align="center" style="padding-bottom:24px">
-      <span style="display:inline-block;background:#143c32;color:#f5ede3;font-size:11px;
-                   font-weight:700;letter-spacing:2px;text-transform:uppercase;
-                   padding:7px 16px;border-radius:100px">{community}</span>
-    </td></tr>
-    <tr><td style="background:#fff;border-radius:24px;padding:36px 32px;box-shadow:0 4px 24px rgba(20,60,50,0.08)">
-
-      <!-- Headline -->
-      <div style="text-align:center;margin-bottom:28px">
-        <div style="font-size:28px;margin-bottom:8px">🎉</div>
-        <h1 style="font-size:24px;font-weight:700;color:#1a1f18;margin:0 0 8px;letter-spacing:-0.5px">
-          You're both in!
-        </h1>
-        <p style="font-size:15px;color:#5a6356;margin:0;line-height:1.6">
-          Both of you said yes to a <strong>{activity.lower()}</strong> at {community}.<br>
-          Here's who you're meeting:
-        </p>
-      </div>
-
-      <!-- Person cards -->
-      {_person_block(name1, user1.email, user1.bio, user1.extra_info)}
-      <div style="text-align:center;margin:4px 0 12px;font-size:20px;color:#c4a87d">⟷</div>
-      {_person_block(name2, user2.email, user2.bio, user2.extra_info)}
-
-      <!-- Next step -->
-      <div style="background:#edf5f0;border-radius:14px;padding:16px 20px;margin:24px 0">
-        <p style="margin:0;font-size:14px;color:#143c32;font-weight:600;margin-bottom:6px">What to do next</p>
-        <p style="margin:0;font-size:14px;color:#2d5a46;line-height:1.6">
-          Hit <strong>Reply All</strong> on this email to say hello to each other.
-          Suggest a time for a {activity.lower()} — even a hallway hello counts.
-        </p>
-      </div>
-
-      <p style="font-size:13px;color:#8a9386;text-align:center;margin:0;line-height:1.6">
-        Your email addresses are only shared with each other, never posted publicly.
-      </p>
-
-    </td></tr>
-    <tr><td style="padding-top:24px;text-align:center;font-size:12px;color:#8a9386">
-      — Community Coffee
-    </td></tr>
-  </table>
-</div>"""
-
-        plain = (
-            f"Hi {name1} and {name2},\n\n"
-            f"Great news — you both said yes! Here's how to reach each other:\n\n"
-            f"{name1}: {user1.email}\n"
-            f"{name2}: {user2.email}\n\n"
-            f"Hit Reply All to say hello and set up your {activity.lower()}.\n\n"
-            f"— Community Coffee"
+        subject, plain, html = emails.connection_email(
+            user1=user1, user2=user2, community_name=self.community_name,
         )
 
         try:

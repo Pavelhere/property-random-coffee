@@ -12,3 +12,11 @@ class DBTables:
 
 
 DB_TABLES = DBTables()
+
+# Single source of truth for activity display names (was duplicated across
+# main.py, services/matching.py, and services/responses.py).
+ACTIVITY_LABELS = {
+    "coffee": "Coffee chat",
+    "walking": "Neighborhood walk",
+    "playdate": "Playdate with kids",
+}

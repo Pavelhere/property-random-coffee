@@ -7,6 +7,7 @@ pydantic==1.8.1
 tabulate==0.8.9
 pytz==2022.1
 Flask==2.2.5
+werkzeug>=2.2.2,<3.0
 gunicorn==21.2.0
 greenlet==3.1.1
 resend>=2.0.0

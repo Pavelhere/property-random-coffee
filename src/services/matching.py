@@ -5,7 +5,7 @@ import hmac
 from urllib.parse import urlencode
 from loguru import logger
 
-from utils import season
+from utils import emails, season
 from models.metadata import Metadata
 from db.exceptions import MetadataNotFoundError, UserNotFoundError
 
@@ -109,83 +109,21 @@ class MatchingService:
             self.meet_repo.update(meet)
         return sent_both
 
-    ACTIVITY_LABELS = {
-        "coffee": "Coffee chat",
-        "walking": "Neighborhood walk",
-        "playdate": "Playdate with kids",
-    }
-
     def _send_email(self, user, peer, meet):
         accept_url = self._build_action_url(meet.id, user.id, "accept")
         decline_url = self._build_action_url(meet.id, user.id, "decline")
         community_name = self.config["community"].get("displayName", "Community")
-        peer_name = peer.full_name or peer.username
-        user_name = user.full_name or user.username
-        activity_label = self.ACTIVITY_LABELS.get(peer.meet_group, peer.meet_group or "meetup")
 
-        subject = f"Your neighbor match this week — {community_name}"
-        body = (
-            f"Hi {user_name},\n\n"
-            f"This week we paired you with {peer_name}.\n"
+        subject, body, html = emails.match_proposal_email(
+            recipient_name=user.full_name or user.username,
+            peer_name=peer.full_name or peer.username,
+            peer_bio=peer.bio,
+            peer_activity=peer.meet_group,
+            peer_extra=peer.extra_info,
+            accept_url=accept_url,
+            decline_url=decline_url,
+            community_name=community_name,
         )
-        if peer.bio:
-            body += f'"{peer.bio}"\n'
-        if peer.extra_info:
-            body += f"About them: {peer.extra_info}\n"
-        body += (
-            f"Suggested: {activity_label}\n\n"
-            f"Accept: {accept_url}\n"
-            f"Decline: {decline_url}\n\n"
-            f"— Community Coffee"
-        )
-
-        # Build HTML version
-        extra_block = ""
-        if peer.extra_info:
-            tags = [t.strip() for t in peer.extra_info.split(",") if t.strip()]
-            if tags:
-                tag_html = "".join(
-                    f'<span style="display:inline-block;background:#f0ebe3;border-radius:12px;'
-                    f'padding:4px 10px;font-size:13px;margin:2px 4px 2px 0">{t}</span>'
-                    for t in tags[:4]
-                )
-                extra_block = f'<div style="margin:12px 0">{tag_html}</div>'
-
-        html = f"""
-<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1a1a1a">
-  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#888;margin:0 0 12px">
-    {community_name}
-  </p>
-  <p style="font-size:16px;color:#444">Hi {user_name},</p>
-  <p style="font-size:16px;color:#444;line-height:1.6">
-    This week we paired you with a neighbor. Here's who you're meeting:
-  </p>
-  <div style="border:1px solid #e0d8ce;border-radius:12px;padding:20px;margin:20px 0;background:#faf8f5">
-    <h2 style="margin:0 0 6px;font-size:20px">{peer_name}</h2>
-    {'<p style="margin:0 0 10px;font-style:italic;color:#555;font-size:14px">"' + peer.bio + '"</p>' if peer.bio else ''}
-    {extra_block}
-    <p style="margin:8px 0 0;font-size:14px;color:#0d3d3a;font-weight:500">
-      ☕ Up for a {activity_label.lower()}
-    </p>
-  </div>
-  <p style="font-size:15px;color:#444">
-    Even a hallway hello counts — say yes and we'll share contact details.
-  </p>
-  <div style="margin:28px 0">
-    <a href="{accept_url}"
-       style="display:inline-block;background:#0d3d3a;color:#f5ede3;text-decoration:none;
-              padding:14px 28px;border-radius:8px;font-size:15px;font-weight:500;margin-right:12px">
-      ✓ Accept
-    </a>
-    <a href="{decline_url}"
-       style="display:inline-block;background:#f0ebe3;color:#555;text-decoration:none;
-              padding:14px 28px;border-radius:8px;font-size:15px">
-      Decline
-    </a>
-  </div>
-  <p style="font-size:13px;color:#aaa">— Community Coffee</p>
-</div>
-"""
 
         try:
             self.email_client.send(to_address=user.email, subject=subject, body=body, html=html)
@@ -194,6 +132,7 @@ class MatchingService:
         except Exception as exc:
             logger.error("Failed to send email to %s for meet %s: %s", user.email, meet.id, exc)
             return False
+
 
     def _build_action_url(self, meet_id, uid, action):
         payload = {

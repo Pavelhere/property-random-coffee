@@ -9,13 +9,17 @@ from multiprocessing import Process
 from flask import Flask, request, jsonify, Response, render_template_string
 from loguru import logger
 
+from markupsafe import escape
+
 from utils import config as cfg_utils
+from utils import emails
 from db import utils as db_utils
 from utils.emailer import EmailClient
 from services.matching import MatchingService
 from services.responses import ResponseService
 from daemons import match_daemon
 from models.user import User
+from constants.common import ACTIVITY_LABELS
 from db.exceptions import UserNotFoundError
 
 CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../resources/config.yml"))
@@ -28,12 +32,6 @@ response_service = ResponseService(config, meet_repo, match_response_repo, user_
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config["ADMIN_TOKEN"] = config["app"].get("adminToken")
-
-ACTIVITY_LABELS = {
-    "coffee": "Coffee chat",
-    "walking": "Neighborhood walk",
-    "playdate": "Playdate with kids",
-}
 
 LIFE_CONTEXT_OPTIONS = ["New here", "Works from home", "Has kids", "Pet owner"]
 
@@ -837,84 +835,6 @@ tr:hover td{background:#fafbfa}
 </html>"""
 
 
-def _confirmation_email_html(name, community_name):
-    return f"""
-<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1a1a1a">
-  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#888;margin:0 0 12px">
-    {community_name}
-  </p>
-  <h1 style="font-size:28px;margin:0 0 16px">You're in, {name}!</h1>
-  <p style="font-size:16px;color:#444;line-height:1.6">
-    Every Monday you'll receive a personal intro to one neighbor — their name,
-    a short bio, and a suggested way to meet. One tap to accept.
-  </p>
-  <p style="font-size:16px;color:#444;line-height:1.6">
-    No app, no account. Just a friendly email once a week.
-  </p>
-  <p style="font-size:14px;color:#888;margin-top:32px">
-    — Community Coffee
-  </p>
-</div>
-"""
-
-
-def _match_email_html(recipient_name, peer_name, peer_bio, peer_activity, peer_extra,
-                      accept_url, decline_url, community_name):
-    activity_label = ACTIVITY_LABELS.get(peer_activity, peer_activity)
-    extra_block = ""
-    if peer_extra:
-        tags = [t.strip() for t in peer_extra.split(",") if t.strip()]
-        if tags:
-            tag_html = "".join(
-                f'<span style="display:inline-block;background:#f0ebe3;border-radius:12px;'
-                f'padding:4px 10px;font-size:13px;margin:2px 4px 2px 0">{t}</span>'
-                for t in tags[:4]
-            )
-            extra_block = f'<div style="margin:12px 0">{tag_html}</div>'
-
-    return f"""
-<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1a1a1a">
-  <p style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#888;margin:0 0 12px">
-    {community_name}
-  </p>
-  <p style="font-size:16px;color:#444">Hi {recipient_name},</p>
-  <p style="font-size:16px;color:#444;line-height:1.6">
-    This week we paired you with a neighbor. Here's who you're meeting:
-  </p>
-
-  <div style="border:1px solid #e0d8ce;border-radius:12px;padding:20px;margin:20px 0;background:#faf8f5">
-    <h2 style="margin:0 0 6px;font-size:20px">{peer_name}</h2>
-    <p style="margin:0 0 10px;font-style:italic;color:#555;font-size:14px">"{peer_bio}"</p>
-    {extra_block}
-    <p style="margin:8px 0 0;font-size:14px;color:#0d3d3a;font-weight:500">
-      ☕ Up for a {activity_label.lower()}
-    </p>
-  </div>
-
-  <p style="font-size:15px;color:#444">
-    Even a hallway hello counts — say yes and we'll share contact details.
-  </p>
-
-  <div style="margin:28px 0">
-    <a href="{accept_url}"
-       style="display:inline-block;background:#0d3d3a;color:#f5ede3;text-decoration:none;
-              padding:14px 28px;border-radius:8px;font-size:15px;font-weight:500;margin-right:12px">
-      ✓ Accept
-    </a>
-    <a href="{decline_url}"
-       style="display:inline-block;background:#f0ebe3;color:#555;text-decoration:none;
-              padding:14px 28px;border-radius:8px;font-size:15px">
-      Decline
-    </a>
-  </div>
-
-  <p style="font-size:13px;color:#aaa">
-    — Community Coffee
-  </p>
-</div>
-"""
-
-
 def _matches_to_csv(rows):
     if not rows:
         return ""
@@ -1053,18 +973,8 @@ def join():
     # Send confirmation email
     community_name = config["community"].get("displayName", "Community")
     try:
-        email_client.send(
-            to_address=email,
-            subject=f"You're in — {community_name}",
-            body=(
-                f"Hi {full_name},\n\n"
-                f"You're registered for {community_name}!\n\n"
-                "Every Monday you'll get a personal intro to one neighbor — their name, "
-                "a short bio, and a suggested way to meet. One tap to accept.\n\n"
-                f"— The {community_name} team"
-            ),
-            html=_confirmation_email_html(full_name, community_name),
-        )
+        subject, body, html = emails.confirmation_email(full_name, community_name)
+        email_client.send(to_address=email, subject=subject, body=body, html=html)
     except Exception as exc:
         logger.error("Failed to send confirmation email to %s: %s", email, exc)
 
@@ -1105,7 +1015,8 @@ def admin_test_email():
     community_name = config["community"].get("displayName", "Community")
     base_url = config["app"].get("baseUrl", "http://localhost:5000").rstrip("/")
 
-    html = _match_email_html(
+    # Same template as real sends — the preview can never drift from reality.
+    subject, body, html = emails.match_proposal_email(
         recipient_name="Alex",
         peer_name="Marcus Lee",
         peer_bio="Product designer, amateur baker, always up for a ramen recommendation.",
@@ -1115,19 +1026,11 @@ def admin_test_email():
         decline_url=f"{base_url}/respond?meet_id=1&uid=test&action=decline&signature=test",
         community_name=community_name,
     )
-    body = (
-        f"Hi Alex,\n\n"
-        f"This week we paired you with Marcus Lee.\n"
-        f"Bio: Product designer, amateur baker, always up for a ramen recommendation.\n"
-        f"Suggested: Coffee chat\n\n"
-        "This is a TEST email — real links will work when matching runs.\n\n"
-        f"— {community_name}"
-    )
 
     try:
         email_client.send(
             to_address=to,
-            subject=f"[TEST] Your neighbor match — {community_name}",
+            subject=f"[TEST] {subject}",
             body=body,
             html=html,
         )
@@ -1198,13 +1101,13 @@ def respond():
         logger.error("Failed to store response: %s", exc)
         return Response("Unable to record response", status=400)
 
-    # Get peer name for display
+    # Get peer name for display (escaped — bio/name are user-supplied)
     try:
         meet = meet_repo.get_by_id(meet_id_int)
         peer = response_service.get_peer(meet, uid)
-        peer_name = (peer.full_name or peer.username).split()[0] if peer else "your neighbor"
-        peer_bio = peer.bio if peer else None
-        peer_avatar = peer_name[0].upper() if peer_name else "?"
+        peer_name = escape((peer.full_name or peer.username).split()[0]) if peer else "your neighbor"
+        peer_bio = escape(peer.bio) if peer and peer.bio else None
+        peer_avatar = escape(peer_name[0].upper()) if peer_name else "?"
     except Exception:
         peer_name = "your neighbor"
         peer_bio = None
