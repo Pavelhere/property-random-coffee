@@ -356,6 +356,16 @@ footer{max-width:72rem;margin:0 auto;padding:0 1.25rem 2.5rem;display:flex;flex-
               </div>
 
               <div>
+                <span class="field-label" style="display:block;margin-bottom:.75rem">I am…</span>
+                <div class="radio-grid-3">
+                  <label class="radio-pill"><input type="radio" name="gender" value="woman" required> A woman</label>
+                  <label class="radio-pill"><input type="radio" name="gender" value="man"> A man</label>
+                  <label class="radio-pill"><input type="radio" name="gender" value="unspecified"> Prefer not to say</label>
+                </div>
+                <p class="field-hint">Only used to honor everyone's meeting preferences — never shown to neighbors.</p>
+              </div>
+
+              <div>
                 <span class="field-label" style="display:block;margin-bottom:.75rem">Who are you comfortable meeting?</span>
                 <div class="radio-grid-3">
                   <label class="radio-pill"><input type="radio" name="gender_pref" value="any" checked required> No preference</label>
@@ -909,10 +919,13 @@ def join():
     full_name = (payload.get("full_name") or "").strip()
     meet_group = (payload.get("meet_group") or "").strip()
     bio = (payload.get("bio") or "").strip()[:250]
+    gender = (payload.get("gender") or "unspecified").strip()
     gender_pref = (payload.get("gender_pref") or "any").strip()
     cadence = (payload.get("cadence") or "0").strip()
     if cadence not in ("0", "1", "2", "3", "4"):
         cadence = "0"
+    if gender not in ("woman", "man", "unspecified"):
+        gender = "unspecified"
     if gender_pref not in ("any", "women", "men"):
         gender_pref = "any"
 
@@ -958,6 +971,7 @@ def join():
         user.pause_in_weeks = cadence
         user.bio = bio
         user.extra_info = extra_info
+        user.gender = gender
         user.gender_pref = gender_pref
         user_repo.update(user)
         created = False
@@ -972,6 +986,7 @@ def join():
             pause_in_weeks=cadence,
             bio=bio,
             extra_info=extra_info,
+            gender=gender,
             gender_pref=gender_pref,
         )
         user_repo.add(user)

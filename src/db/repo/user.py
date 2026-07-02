@@ -40,6 +40,7 @@ class UserRepository:
                 meet_group=user.meet_group,
                 bio=user.bio,
                 extra_info=user.extra_info,
+                gender=user.gender,
                 gender_pref=user.gender_pref,
             ))
 

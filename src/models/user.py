@@ -19,6 +19,11 @@ class User(Base):
     meet_group = Column(String(24), nullable=False, unique=False, default="remote")
     bio = Column(String(250), nullable=True)
     extra_info = Column(String(500), nullable=True)
+    # gender: "woman" | "man" | "unspecified" — what the resident IS.
+    # gender_pref: "any" | "women" | "men" — who they're comfortable meeting.
+    # Pairing enforces prefs mutually; "unspecified" can only match "any".
+    # (migrations/002_user_gender.sql)
+    gender = Column(String(12), nullable=True, default="unspecified")
     gender_pref = Column(String(10), nullable=True)
 
     tmst_created = Column(DateTime(timezone=True), server_default=func.now())

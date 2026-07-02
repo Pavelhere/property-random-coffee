@@ -58,12 +58,22 @@ class MatchingService:
                 continue
             grouped_users.setdefault(user.meet_group, []).append(user)
 
+        considered = []
         for group_name, members in grouped_users.items():
             group_definition = enabled_groups[group_name]
             additional = group_definition.get("additionalUsers", [])
             self.meet_repo.create(
                 uids=[user.id for user in members],
-                additional_uids=additional
+                additional_uids=additional,
+                compatible=self._compatibility_checker(members),
+            )
+            considered.extend(members)
+
+        unmatched = self._unmatched_users(season_id, considered)
+        if unmatched:
+            logger.warning(
+                "Season %s: %d users unmatched (gender constraints / odd count): %s",
+                season_id, len(unmatched), [u.email for u in unmatched],
             )
 
         proposals_sent = self._send_proposals(season_id)
@@ -72,8 +82,47 @@ class MatchingService:
         return {
             "status": "ok",
             "season": season_id,
-            "proposals_sent": proposals_sent
+            "proposals_sent": proposals_sent,
+            "unmatched": [u.email for u in unmatched],
         }
+
+    # gender_pref value → the gender the peer must have for it to be satisfied
+    _GENDER_FOR_PREF = {"women": "woman", "men": "man"}
+
+    @classmethod
+    def _mutually_compatible(cls, a, b):
+        """Both residents' stated preferences must be satisfied.
+
+        "women only"/"men only" are hard constraints: the peer's gender must
+        match. "Prefer not to say" (gender unspecified/None) can never satisfy
+        a hard constraint, so those residents pair only with "no preference"
+        people — best-effort, never stranded by design (they stay eligible
+        for the majority of the pool).
+        """
+        for me, peer in ((a, b), (b, a)):
+            required = cls._GENDER_FOR_PREF.get(me.gender_pref)
+            if required and peer.gender != required:
+                return False
+        return True
+
+    def _compatibility_checker(self, members):
+        by_id = {u.id: u for u in members}
+
+        def compatible(uid_a, uid_b):
+            a, b = by_id.get(uid_a), by_id.get(uid_b)
+            if a is None or b is None:
+                return True  # additionalUsers outside the group: no data, allow
+            return self._mutually_compatible(a, b)
+
+        return compatible
+
+    def _unmatched_users(self, season_id, considered):
+        meets = self.meet_repo.list(spec={"season": season_id})
+        matched_ids = set()
+        for meet in meets:
+            matched_ids.add(meet.uid1)
+            matched_ids.add(meet.uid2)
+        return [u for u in considered if u.id not in matched_ids]
 
     @staticmethod
     def _run_key(season_id):

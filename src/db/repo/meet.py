@@ -21,17 +21,22 @@ class MeetRepository:
     def __init__(self, session_factory: Callable[..., AbstractContextManager[Session]]) -> None:
         self.session_factory = session_factory
 
-    def create(self, uids, additional_uids=None, kind='random'):
+    def create(self, uids, additional_uids=None, kind='random', compatible=None):
+        """Create pairs for this season.
+
+        compatible: optional (uid_a, uid_b) -> bool predicate; pairs failing
+        it are never created (mutual gender preferences).
+        """
         logger.info("Starting algorithm to create meets")
 
         if additional_uids is None:
             additional_uids = []
         if kind == 'random':
-            self.__create_random(uids, additional_uids)
+            self.__create_random(uids, additional_uids, compatible)
 
         logger.info("Algorithm for creating pairs has successfully completed")
 
-    def __create_random(self, uids, additional_users):
+    def __create_random(self, uids, additional_users, compatible=None):
         season_id = season.get()
 
         for_rand_distr = []
@@ -55,6 +60,8 @@ class MeetRepository:
             potential = []
             for uid in uids:
                 if uid == cur_uid:
+                    continue
+                if compatible and not compatible(cur_uid, uid):
                     continue
                 take = True
                 for meet in meets:
@@ -89,11 +96,15 @@ class MeetRepository:
             while len(for_rand_distr) > 1:
                 uid1 = for_rand_distr[0]
 
-                # Pick up random uid except for uid1
-                uid2 = random.choice(
-                    [uid for uid in for_rand_distr if uid != uid1]
-                )
+                candidates = [uid for uid in for_rand_distr if uid != uid1]
+                if compatible:
+                    candidates = [uid for uid in candidates if compatible(uid1, uid)]
+                if not candidates:
+                    logger.info(f"No compatible fallback pair for {uid1}; left unmatched")
+                    for_rand_distr.remove(uid1)
+                    continue
 
+                uid2 = random.choice(candidates)
                 self.add(Meet(season=season_id, uid1=uid1, uid2=uid2))
                 for_rand_distr.remove(uid1)
                 for_rand_distr.remove(uid2)
