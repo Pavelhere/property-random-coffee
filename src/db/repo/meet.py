@@ -7,7 +7,7 @@ from typing import Callable, Iterator, Mapping
 
 from sqlalchemy.orm import Session, aliased
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from loguru import logger
 
 from utils import repo, season
@@ -21,23 +21,42 @@ class MeetRepository:
     def __init__(self, session_factory: Callable[..., AbstractContextManager[Session]]) -> None:
         self.session_factory = session_factory
 
-    def create(self, uids, additional_uids=None, kind='random', compatible=None):
+    def create(self, uids, additional_uids=None, kind='random', compatible=None,
+               season_id=None):
         """Create pairs for this season.
 
         compatible: optional (uid_a, uid_b) -> bool predicate; pairs failing
         it are never created (mutual gender preferences).
+        season_id: pass the caller's (property-timezone) season so pairing
+        and proposal sending agree on the week.
         """
         logger.info("Starting algorithm to create meets")
 
         if additional_uids is None:
             additional_uids = []
         if kind == 'random':
-            self.__create_random(uids, additional_uids, compatible)
+            self.__create_random(uids, additional_uids, compatible, season_id)
 
         logger.info("Algorithm for creating pairs has successfully completed")
 
-    def __create_random(self, uids, additional_users, compatible=None):
-        season_id = season.get()
+    def _have_met(self, uid1, uid2):
+        """True if this pair has EVER been matched (any prior week).
+
+        Repeat-avoidance is season-to-date: at ~40 residents, avoiding only
+        last week's pair would produce repeats within a month. The fallback
+        loop may still allow a repeat when the alternative is leaving both
+        residents unmatched.
+        """
+        with self.session_factory() as session:
+            return session.query(Meet).filter(
+                or_(
+                    and_(Meet.uid1 == uid1, Meet.uid2 == uid2),
+                    and_(Meet.uid1 == uid2, Meet.uid2 == uid1),
+                )
+            ).count() > 0
+
+    def __create_random(self, uids, additional_users, compatible=None, season_id=None):
+        season_id = season_id or season.get()
 
         for_rand_distr = []
 
@@ -73,22 +92,21 @@ class MeetRepository:
 
             random.shuffle(potential)
 
-            if len(potential) > 0:
-                pair_uid = potential[0]
+            # First shuffled candidate this resident has never met. (The old
+            # code punted cur_uid to the fallback pool if the FIRST candidate
+            # was a repeat, even when fresh candidates existed further down.)
+            pair_uid = None
+            for candidate in potential:
+                if not self._have_met(cur_uid, candidate):
+                    pair_uid = candidate
+                    break
 
-                # NOTE: check that uid1 and uid2 didn't have a meet 1 & 2 weeks ago
-                if self.is_exist(season.get("delta", 7), {"uid1": cur_uid, "uid2": pair_uid}) or \
-                    self.is_exist(season.get("delta", 7), {"uid1": pair_uid, "uid2": cur_uid}) or \
-                    self.is_exist(season.get("delta", 14), {"uid1": cur_uid, "uid2": pair_uid}) or \
-                    self.is_exist(season.get("delta", 14), {"uid1": pair_uid, "uid2": cur_uid}):
-                    for_rand_distr.append(cur_uid)
-                    uids.remove(cur_uid)
-                else:
-                    self.add(Meet(season=season_id, uid1=cur_uid, uid2=pair_uid))
-                    uids.remove(pair_uid)
-                    logger.info(f"Meet created for pair ({cur_uid}, {pair_uid})")
+            if pair_uid is not None:
+                self.add(Meet(season=season_id, uid1=cur_uid, uid2=pair_uid))
+                uids.remove(pair_uid)
+                logger.info(f"Meet created for pair ({cur_uid}, {pair_uid})")
             else:
-                logger.info(f"Meet can't be created for {cur_uid}; No potential users found")
+                logger.info(f"No never-met candidate for {cur_uid}; deferring to fallback pool")
                 for_rand_distr.append(cur_uid)
                 uids.remove(cur_uid)
 

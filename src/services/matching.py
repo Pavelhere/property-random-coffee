@@ -40,7 +40,8 @@ class MatchingService:
             raise ValueError("app.responseSecret is required for matching service")
 
     def generate_matches(self, *, force=False):
-        season_id = season.get()
+        now = cfg_utils.community_now(self.config)
+        season_id = season.get(now=now)
 
         # Atomic claim: inserting the unique MATCH_RUN row either succeeds
         # (we own this week's run) or hits the unique index (someone already
@@ -51,7 +52,7 @@ class MatchingService:
             return {"status": "skipped", "season": season_id}
 
         enabled_groups = {group["name"]: group for group in self.config["community"].get("enabledGroups", [])}
-        today = cfg_utils.community_now(self.config).date()
+        today = now.date()
         users = [u for u in self.user_repo.list() if self._is_active(u, today)]
 
         grouped_users = {}
@@ -68,6 +69,7 @@ class MatchingService:
                 uids=[user.id for user in members],
                 additional_uids=additional,
                 compatible=self._compatibility_checker(members),
+                season_id=season_id,
             )
             considered.extend(members)
 
