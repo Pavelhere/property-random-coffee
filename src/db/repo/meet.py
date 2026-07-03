@@ -179,12 +179,14 @@ class MeetRepository:
 
             session.commit()
 
+    # Raised after the session closes — expected NotFound must not trigger
+    # the session manager's error-with-traceback logging (see user repo).
     def get_by_id(self, meet_id: int) -> Meet:
         with self.session_factory() as session:
             meet = session.query(Meet).filter(Meet.id == meet_id).first()
-            if not meet:
-                raise MeetNotFoundError(meet_id)
-            return meet
+        if not meet:
+            raise MeetNotFoundError(meet_id)
+        return meet
 
     def delete(self, meet: Meet) -> None:
         with self.session_factory() as session:

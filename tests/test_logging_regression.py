@@ -40,6 +40,55 @@ def test_dry_run_email_log_carries_cc():
     assert "b@example.com" in out
 
 
+# Regression: ISSUE-002 — every new signup logged "Session rollback because
+# of exception" with a full UserNotFoundError traceback. That's the expected
+# email-not-found → create path, but repos raised NotFound INSIDE the session
+# context manager, which error-logs any exception. NotFound is now raised
+# after the session closes.
+# Found by /qa on 2026-07-02, fixed 2026-07-03.
+# Report: .gstack/qa-reports/qa-report-127-0-0-1-2026-07-02.md
+
+def test_new_signup_logs_no_rollback_traceback(client, sent_emails):
+    records = []
+    sink_id = logger.add(lambda msg: records.append(str(msg)), level="DEBUG")
+    try:
+        res = client.post("/join", data={
+            "full_name": "Fresh User", "email": "fresh@example.com",
+            "bio": "b", "meet_group": "coffee", "gender": "woman",
+            "gender_pref": "any", "cadence": "0", "consent": "on",
+        })
+    finally:
+        logger.remove(sink_id)
+
+    out = "".join(records)
+    assert res.status_code == 200
+    assert len(sent_emails) == 1  # signup still worked end-to-end
+    assert "Session rollback" not in out
+    assert "UserNotFoundError" not in out
+    assert "Traceback" not in out
+
+
+def test_missing_user_and_meet_lookups_are_quiet(repos):
+    from db.exceptions import UserNotFoundError, MeetNotFoundError
+    import pytest
+
+    user_repo, meet_repo, _, _, _ = repos
+    records = []
+    sink_id = logger.add(lambda msg: records.append(str(msg)), level="DEBUG")
+    try:
+        with pytest.raises(UserNotFoundError):
+            user_repo.get_by_id("no-such-uid")
+        with pytest.raises(UserNotFoundError):
+            user_repo.get_by_email("ghost@example.com")
+        with pytest.raises(MeetNotFoundError):
+            meet_repo.get_by_id(999999)
+    finally:
+        logger.remove(sink_id)
+
+    out = "".join(records)
+    assert "Session rollback" not in out
+
+
 def test_no_percent_s_logger_calls_remain_in_src():
     # The whole class of bug: loguru + %s args silently drops the values.
     import pathlib

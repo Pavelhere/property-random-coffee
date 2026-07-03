@@ -36,7 +36,12 @@ path.
 
 ---
 
-## Stop logging expected-flow tracebacks on signup (QA ISSUE-002, low)
+## ~~Stop logging expected-flow tracebacks on signup (QA ISSUE-002, low)~~ — FIXED 2026-07-03
+
+**Fixed:** repos now raise NotFound after the session context closes, so expected
+lookups (signup email-exists check, respond/preferences token lookups) no longer
+trigger the session manager's error-with-traceback logging. Regression tests in
+`tests/test_logging_regression.py`.
 
 **What:** Every new signup logs `Session rollback because of exception` with a full
 `UserNotFoundError` traceback — it's the normal email-not-found → create path, but

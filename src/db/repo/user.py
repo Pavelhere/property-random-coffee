@@ -48,19 +48,22 @@ class UserRepository:
 
             session.commit()
 
+    # NotFound is raised AFTER the session closes: it's expected control flow
+    # (e.g. /join checks email-exists), and the session context manager logs
+    # any exception raised inside it as an error with a full traceback.
     def get_by_id(self, id: str) -> User:
         with self.session_factory() as session:
             user = session.query(User).filter(User.id == id).first()
-            if not user:
-                raise UserNotFoundError(id)
-            return user
+        if not user:
+            raise UserNotFoundError(id)
+        return user
 
     def get_by_email(self, email: str) -> User:
         with self.session_factory() as session:
             user = session.query(User).filter(User.email == email).first()
-            if not user:
-                raise UserNotFoundError(email)
-            return user
+        if not user:
+            raise UserNotFoundError(email)
+        return user
 
     def list(self, spec: Mapping = None) -> Iterator[User]:
         with self.session_factory() as session:
